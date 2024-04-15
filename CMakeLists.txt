@@ -13,7 +13,10 @@ if(WIN32)
 	add_definitions(-D_WIN64=1)
 	link_directories("lib/windows/vs160${ARCH}")
 elseif(APPLE)
-	set(ARCH arm64)
+	execute_process(COMMAND uname -m
+			OUTPUT_VARIABLE CMAKE_OSX_ARCHITECTURES
+			OUTPUT_STRIP_TRAILING_WHITESPACE)
+	set(ARCH ${CMAKE_OSX_ARCHITECTURES})
 	add_definitions(-D_MACOS=1)
 	link_directories("lib/macos/${ARCH}")
 endif()

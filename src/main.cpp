@@ -69,7 +69,7 @@ int32_t main(int32_t argc, char **argv) {
 	
 	// create kernel
 	Kernel kernel = device.createKernel().setUniforms(1).setStorages(5, false);
-	if(!kernel.loadShaderGLSL("src/main.shader", "COMPUTE_SHADER=1; GROUP_SIZE=%uu", group_size)) return 1;
+	if(!kernel.loadShaderGLSL("../src/main.shader", "COMPUTE_SHADER=1; GROUP_SIZE=%uu", group_size)) return 1;
 	if(!kernel.create()) return 1;
 	
 	// create pipeline
@@ -79,8 +79,8 @@ int32_t main(int32_t argc, char **argv) {
 	pipeline.setDepthFormat(window.getDepthFormat());
 	pipeline.setDepthFunc(Pipeline::DepthFuncLess);
 	pipeline.addAttribute(Pipeline::AttributePosition, FormatRGBAf32, 0, 0, sizeof(Vector4f), 1);
-	if(!pipeline.loadShaderGLSL(Shader::TypeVertex, "src/main.shader", "VERTEX_SHADER=1")) return 1;
-	if(!pipeline.loadShaderGLSL(Shader::TypeFragment, "src/main.shader", "FRAGMENT_SHADER=1")) return 1;
+	if(!pipeline.loadShaderGLSL(Shader::TypeVertex, "../src/main.shader", "VERTEX_SHADER=1")) return 1;
+	if(!pipeline.loadShaderGLSL(Shader::TypeFragment, "../src/main.shader", "FRAGMENT_SHADER=1")) return 1;
 	if(!pipeline.create()) return 1;
 	
 	// create particles
