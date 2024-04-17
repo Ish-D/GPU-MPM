@@ -12,8 +12,8 @@
             font-weight: 300;
             font-family: 'Open Sans', sans-serif;
             color: #121212;
-            cursor: url(https://rsha256.github.io/dragon-clear32.png), default!important;
-            cursor: url(https://rsha256.github.io/dragon-clear32.png), pointer!important;
+            /*cursor: url(https://rsha256.github.io/dragon-clear32.png), default!important;*/
+            /*cursor: url(https://rsha256.github.io/dragon-clear32.png), pointer!important;*/
         }
         h1, h2, h3, h4 {
             font-family: 'Source Sans Pro', sans-serif;
@@ -62,18 +62,43 @@
 
 <h1 align="middle">CS 184: Computer Graphics and Imaging, Spring 2024</h1>
 <h1 align="middle">Final Project: GPU MPM</h1>
-<h2 align="middle">Ishan Darji, Dylan Rosario, Harkeerat Singh, Zachary Yan</h2>
+<h2 align="middle">Team 62: Ishan Darji, Dylan Rosario, Harkeerat Singh, Zachary Yan</h2>
 
 <br><br>
 
 <div>
+    <h2 align="middle">Milestone Video</h2>
+    <iframe src="https://drive.google.com/file/d/1uXp1hvUX7XaGbB8G-5BVqmpntZljeNcW/preview" width="640" height="480" align="middle" allow="autoplay"></iframe></div>
+
+
+
+<div>
     <h2 align="middle">Preliminary Results</h2>
-    <p>Temp</p>
+    <p>After considering multiple options, we decided to use the Tellusim core SDK to develop our project. Tellusim gives us an environment where much of the graphics API boilerplate is abstracted away, but we can write regular GLSL compute shaders that runs on all of our personal devices. Tellusim also provides algorithms such as a GPU radix sort and spatial grid that will allow us to focus on the actual MPM simulation, and not the implementation details of auxiliary algorithms.</p>
+    <p>As for the nature of what we are implementing, we narrowed down our ideas from the initial project proposal, and settled on using material point methods specifically for dynamic object fracture simulation as described in the paper <a href="https://pages.cs.wisc.edu/~sifakis/papers/GPU_MPM.pdf">CD-MPM: Continuum Damage Material Point Methods for Dynamic Fracture Animation</a>. However, the implementation described within the paper is implement entirely on the CPU, and the benchmarks show that it takes many seconds per frame. We hope to speed up these computations and ideally end up with versions of the algorithm that are realtime by implementing the algorithms on the GPU in GLSL. We will be looking at the papers <a href="https://pages.cs.wisc.edu/~sifakis/papers/GPU_MPM.pdf">GPU Optimization of Material Point Methods</a> and <a href="https://arxiv.org/pdf/2111.00699.pdf">Principles towards Real-Time Simulation of Material Point Method on
+        Modern GPUs</a> to aide us in our optimizations.</p>
+    <p>At the moment, we have a very bare-bones particle simulation using some of the Tellusim structures, that checks for intersections with a ground plane, and other nearby particles within a fixed grid size. All of this is done within a compute shader, so the calculations are done on the GPU. From here, we can modify the initial implementation to follow what is described within the CD-MPM paper. Currently, the particles are defined using a center and radius which is cheap and convenient because we do not have to be concerned with arbitrary triangle collision checks. We will likely need to make some changes to the parameters for the particles such that we can more accurately model the behavior of real materials.</p>
 </div>
 
 <div>
     <h2 align="middle">Work Plan</h2>
-    <p>Temp</p>
+    <p>
+        Week 3:
+        <ul>
+            <li>Continue research into material point methods, decide most effective methods for our desired purposes</li>
+            <li>Modify current particle simulation to use material point methods</li>
+            <li>Test simulation with one set of parameters</li>
+            <li>Implement interactive components of program, (let user influence particles, and move around scene)</li>
+        </ul>
+
+        Week 4:
+        <ul>
+            <li>Final touches to algorithm, implement further optimizations</li>
+            <li>Test the simulator on other materials (time permitting)</li>
+            <li>Create final report webpage</li>
+            <li>Create showcase video</li>
+        </ul>
+    </p>
 </div>
 
 <h2 align="middle">Progress Pictures</h2>
