@@ -1,10 +1,5 @@
-// Copyright (C) 2018-2024, Tellusim Technologies Inc. All rights reserved
-// https://tellusim.com/
-
 #version 430 core
 
-/*
- */
 #if COMPUTE_SHADER
 	
 	layout(local_size_x = GROUP_SIZE) in;

@@ -7,3 +7,5 @@ CMakeCache.txt
 main
 **/.DS_Store
 /.idea
+/build
+.DS_Store

@@ -24,6 +24,6 @@ endif()
 add_executable(${PROJECT_NAME} src/main.cpp)
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_20)
-target_include_directories(${PROJECT_NAME} PRIVATE include/tellusim include/lib)
+target_include_directories(${PROJECT_NAME} PRIVATE include/tellusim include/lib src)
 target_link_libraries(${PROJECT_NAME} Tellusim_${ARCH}d)
 set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "main")

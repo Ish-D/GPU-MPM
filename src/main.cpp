@@ -1,6 +1,3 @@
-// Copyright (C) 2018-2024, Tellusim Technologies Inc. All rights reserved
-// https://tellusim.com/
-
 #include <common.h>
 #include <math/TellusimMath.h>
 #include <platform/TellusimDevice.h>
@@ -157,7 +154,7 @@ int32_t main(int32_t argc, char **argv) {
 			Compute compute = device.createCompute();
 			
 			// swap buffers
-			if(simulate && frame_counter < 2800) {
+			if(simulate) {
 				swap(position_buffers[0], position_buffers[1]);
 				swap(velocity_buffers[0], velocity_buffers[1]);
 			}
