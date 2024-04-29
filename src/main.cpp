@@ -9,6 +9,7 @@
 #include <parallel/TellusimRadixSort.h>
 #include <parallel/TellusimSpatialGrid.h>
 
+#include <iostream>
 /*
  */
 using namespace Tellusim;
@@ -38,7 +39,9 @@ int32_t main(int32_t argc, char **argv) {
 		Matrix4x4f modelview;
 		float32_t radius;
 	};
-	
+
+
+
 	// spatial parameters
 	const uint32_t grid_size = 64;
 	const uint32_t group_size = 128;
@@ -50,7 +53,7 @@ int32_t main(int32_t argc, char **argv) {
 		constexpr uint32_t size = 32;
 	#endif
 	constexpr uint32_t num_particles = size * size * size;
-	
+
 	// create device
 	Device device(window);
 	if(!device) return 1;
@@ -65,8 +68,8 @@ int32_t main(int32_t argc, char **argv) {
 	Shader::setCache("main.cache");
 	
 	// create kernel
-	Kernel kernel = device.createKernel().setUniforms(1).setStorages(5, false);
-	if(!kernel.loadShaderGLSL("../src/main.shader", "COMPUTE_SHADER=1; GROUP_SIZE=%uu", group_size)) return 1;
+	Kernel kernel = device.createKernel().setUniforms(1).setStorages(6, false);
+	if(!kernel.loadShaderGLSL("../src/main.comp", "COMPUTE_SHADER=1; GROUP_SIZE=%uu", group_size)) return 1;
 	if(!kernel.create()) return 1;
 	
 	// create pipeline
@@ -76,13 +79,15 @@ int32_t main(int32_t argc, char **argv) {
 	pipeline.setDepthFormat(window.getDepthFormat());
 	pipeline.setDepthFunc(Pipeline::DepthFuncLess);
 	pipeline.addAttribute(Pipeline::AttributePosition, FormatRGBAf32, 0, 0, sizeof(Vector4f), 1);
-	if(!pipeline.loadShaderGLSL(Shader::TypeVertex, "../src/main.shader", "VERTEX_SHADER=1")) return 1;
-	if(!pipeline.loadShaderGLSL(Shader::TypeFragment, "../src/main.shader", "FRAGMENT_SHADER=1")) return 1;
+	if(!pipeline.loadShaderGLSL(Shader::TypeVertex, "../src/main.vert", "VERTEX_SHADER=1")) return 1;
+	if(!pipeline.loadShaderGLSL(Shader::TypeFragment, "../src/main.frag", "FRAGMENT_SHADER=1")) return 1;
 	if(!pipeline.create()) return 1;
 	
 	// create particles
 	Array<Vector4f> positions(num_particles);
 	Array<Vector4f> velocities(num_particles);
+    Array<float> masses(num_particles);
+
 	Matrix4x4f transform = Matrix4x4f::translate(0.0f, 0.0f, size * radius * 2.0f) * Matrix4x4f::rotateY(35.3f) * Matrix4x4f::rotateX(45.0f);
 	for(uint32_t z = 0, index = 0; z < size; z++) {
 		float32_t Z = (z - size * 0.5f) * radius * 2.0f;
@@ -91,8 +96,10 @@ int32_t main(int32_t argc, char **argv) {
 			for(uint32_t x = 0; x < size; x++, index++) {
 				float32_t X = (x - size * 0.5f) * radius * 2.0f;
 				if(index < num_particles) {
+                    // set initial particle mass, velocity, pos
 					positions[index] = transform * Vector4f(X, Y, Z, 1.0f);
 					velocities[index] = Vector4f(0.0f);
+                    masses[index] = 1.0f + index%3;
 				}
 			}
 		}
@@ -101,13 +108,16 @@ int32_t main(int32_t argc, char **argv) {
 	// create buffers
 	Buffer position_buffers[2];
 	Buffer velocity_buffers[2];
+    Buffer mass_buffer; // Constant, so only need one
 	position_buffers[0] = device.createBuffer(Buffer::FlagVertex | Buffer::FlagStorage, positions.get(), positions.bytes());
 	position_buffers[1] = device.createBuffer(Buffer::FlagVertex | Buffer::FlagStorage, positions.bytes());
 	velocity_buffers[0] = device.createBuffer(Buffer::FlagStorage, velocities.get(), velocities.bytes());
 	velocity_buffers[1] = device.createBuffer(Buffer::FlagStorage, velocities.bytes());
-	if(!position_buffers[0] || !position_buffers[1]) return 1;
+    mass_buffer = device.createBuffer(Buffer::FlagStorage, masses.get(), masses.bytes());
+    if(!position_buffers[0] || !position_buffers[1]) return 1;
 	if(!velocity_buffers[0] || !velocity_buffers[1]) return 1;
-	
+	if (!mass_buffer) return 1;
+
 	// create spatial grid
 	RadixSort radix_sort;
 	PrefixScan prefix_scan;
@@ -174,6 +184,7 @@ int32_t main(int32_t argc, char **argv) {
 			compute.setStorageBuffers(0, { spatial_buffer,
 				position_buffers[0], velocity_buffers[0],
 				position_buffers[1], velocity_buffers[1],
+                mass_buffer,
 			});
 			compute.dispatch(num_particles);
 			compute.barrier(spatial_buffer);
@@ -197,7 +208,7 @@ int32_t main(int32_t argc, char **argv) {
 			if(target.isFlipped()) common_parameters.projection = Matrix4x4f::scale(1.0f, -1.0f, 1.0f) * common_parameters.projection;
 			common_parameters.radius = radius;
 			
-			// draw partices
+			// draw particles
 			command.setPipeline(pipeline);
 			command.setUniform(0, common_parameters);
 			command.setIndices({ 0, 1, 2, 2, 3, 0 });
