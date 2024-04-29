@@ -43,6 +43,7 @@ int32_t main(int32_t argc, char **argv) {
 
     constexpr uint32_t size = 32;
 	constexpr uint32_t num_particles = size * size * size;
+    constexpr uint32_t kernel_buffers = 10;
 
 	// create device
 	Device device(window);
@@ -58,10 +59,15 @@ int32_t main(int32_t argc, char **argv) {
 	Shader::setCache("main.cache");
 	
 	// create kernel
-	Kernel kernel = device.createKernel().setUniforms(1).setStorages(6, false);
-	if(!kernel.loadShaderGLSL("../src/main.comp", "COMPUTE_SHADER=1; GROUP_SIZE=%uu", group_size)) return 1;
+	Kernel kernel = device.createKernel().setUniforms(1).setStorages(kernel_buffers, false);
+	if(!kernel.loadShaderGLSL("../src/main.comp", "GROUP_SIZE=%uu", group_size)) return 1;
 	if(!kernel.create()) return 1;
-	
+
+    // Particle to grid kernel
+//    Kernel particleToGrid = device.createKernel().setUniforms(1).setStorages(kernel_buffers, false);
+//    if(!kernel.loadShaderGLSL("../src/particleToGrid.comp", "GROUP_SIZE=%uu", group_size)) return 1;
+//    if(!kernel.create()) return 1;
+
 	// create pipeline
 	Pipeline pipeline = device.createPipeline();
 	pipeline.setUniformMask(0, Shader::MaskVertex);
@@ -71,14 +77,17 @@ int32_t main(int32_t argc, char **argv) {
 	pipeline.addAttribute(Pipeline::AttributePosition, FormatRGBAf32, 0, 0, sizeof(Vector4f), 1);
     pipeline.addStorage(Shader::MaskFragment, false); // Pass velocity into fragment
 
-    if(!pipeline.loadShaderGLSL(Shader::TypeVertex, "../src/main.vert", "VERTEX_SHADER=1")) return 1;
-	if(!pipeline.loadShaderGLSL(Shader::TypeFragment, "../src/main.frag", "FRAGMENT_SHADER=1")) return 1;
+    if(!pipeline.loadShaderGLSL(Shader::TypeVertex, "../src/main.vert")) return 1;
+	if(!pipeline.loadShaderGLSL(Shader::TypeFragment, "../src/main.frag")) return 1;
 	if(!pipeline.create()) return 1;
 	
 	// create particles
-	Array<Vector4f> positions(num_particles);
-	Array<Vector4f> velocities(num_particles);
-    Array<float> masses(num_particles);
+	Array<Vector4f> particle_positions(num_particles);
+	Array<Vector4f> particle_velocities(num_particles);
+    Array<float> particle_masses(num_particles);
+
+    Array<float> cell_masses(grid_size);
+    Array<Vector4f> cell_velocities(grid_size);
 
 	Matrix4x4f transform = Matrix4x4f::translate(0.0f, 0.0f, size * radius * 2.0f) * Matrix4x4f::rotateY(35.3f) * Matrix4x4f::rotateX(45.0f);
 	for(uint32_t z = 0, index = 0; z < size; z++) {
@@ -89,26 +98,45 @@ int32_t main(int32_t argc, char **argv) {
 				float32_t X = (x - size * 0.5f) * radius * 2.0f;
 				if(index < num_particles) {
                     // set initial particle mass, velocity, pos
-					positions[index] = transform * Vector4f(X, Y, Z, 1.0f);
-					velocities[index] = Vector4f(0.0f);
-                    masses[index] = 1.0f + index%3;
+					particle_positions[index] = transform * Vector4f(X, Y, Z, 1.0f);
+                    particle_velocities[index] = Vector4f(0.0f);
+                    particle_masses[index] = 1.0f;
 				}
 			}
 		}
 	}
+
+    for (uint32_t i = 0; i<grid_size; i++) {
+        cell_masses[i] = 0;
+        cell_velocities[i] = Vector4f(0.0f);
+    }
 	
-	// create buffers
-	Buffer position_buffers[2];
-	Buffer velocity_buffers[2];
-    Buffer mass_buffer; // Constant, so only need one
-	position_buffers[0] = device.createBuffer(Buffer::FlagVertex | Buffer::FlagStorage, positions.get(), positions.bytes());
-	position_buffers[1] = device.createBuffer(Buffer::FlagVertex | Buffer::FlagStorage, positions.bytes());
-	velocity_buffers[0] = device.createBuffer(Buffer::FlagStorage, velocities.get(), velocities.bytes());
-	velocity_buffers[1] = device.createBuffer(Buffer::FlagStorage, velocities.bytes());
-    mass_buffer = device.createBuffer(Buffer::FlagStorage, masses.get(), masses.bytes());
-    if(!position_buffers[0] || !position_buffers[1]) return 1;
-	if(!velocity_buffers[0] || !velocity_buffers[1]) return 1;
-	if (!mass_buffer) return 1;
+	// create particle buffers
+	Buffer particle_position_buffers[2];
+	Buffer particle_velocity_buffers[2];
+    Buffer particle_mass_buffer; // Constant, so only need one
+
+	particle_position_buffers[0] = device.createBuffer(Buffer::FlagVertex | Buffer::FlagStorage, particle_positions.get(), particle_positions.bytes());
+    particle_position_buffers[1] = device.createBuffer(Buffer::FlagVertex | Buffer::FlagStorage, particle_positions.bytes());
+    particle_velocity_buffers[0] = device.createBuffer(Buffer::FlagStorage, particle_velocities.get(), particle_velocities.bytes());
+    particle_velocity_buffers[1] = device.createBuffer(Buffer::FlagStorage, particle_velocities.bytes());
+    particle_mass_buffer = device.createBuffer(Buffer::FlagStorage, particle_masses.get(), particle_masses.bytes());
+
+    if(!particle_position_buffers[0] || !particle_position_buffers[1]) return 1;
+    if(!particle_velocity_buffers[0] || !particle_velocity_buffers[1]) return 1;
+    if (!particle_mass_buffer) return 1;
+
+    // create cell buffers
+    Buffer cell_velocity_buffers[2];
+    Buffer cell_mass_buffers[2];
+
+    cell_velocity_buffers[0] = device.createBuffer(Buffer::FlagStorage, cell_velocities.get(), cell_velocities.bytes());
+    cell_velocity_buffers[1] = device.createBuffer(Buffer::FlagStorage,  cell_velocities.bytes());
+    cell_mass_buffers[0] = device.createBuffer(Buffer::FlagStorage, cell_masses.get(), cell_masses.bytes());
+    cell_mass_buffers[1] = device.createBuffer(Buffer::FlagStorage, cell_masses.bytes());
+
+    if (!cell_velocity_buffers[0] || !cell_velocity_buffers[1]) return 1;
+    if (!cell_mass_buffers[0] || !cell_mass_buffers[1]) return 1;
 
 	// create spatial grid
 	RadixSort radix_sort;
@@ -140,48 +168,74 @@ int32_t main(int32_t argc, char **argv) {
 		
 		// reset simulation
 		if(window.getKeyboardKey(' ')) {
-			device.setBuffer(position_buffers[0], positions.get());
-			device.setBuffer(velocity_buffers[0], velocities.get());
+			device.setBuffer(particle_position_buffers[0], particle_positions.get());
+			device.setBuffer(particle_velocity_buffers[0], particle_velocities.get());
+            device.setBuffer(cell_velocity_buffers[0], cell_masses.get());
+            device.setBuffer(cell_mass_buffers[0], cell_masses.get());
+            device.setBuffer(particle_mass_buffer, particle_masses.get());
 			frame_counter = 0;
 		}
 		if(window.getKeyboardKey('s')) {
 			frame_counter = 0;
 		}
 
+        // create command list
+        Compute compute = device.createCompute();
+
+        // swap buffers
+        if(simulate) {
+            swap(particle_position_buffers[0], particle_position_buffers[1]);
+            swap(particle_velocity_buffers[0], particle_velocity_buffers[1]);
+
+            swap(cell_velocity_buffers[0], cell_velocity_buffers[1]);
+            swap(cell_mass_buffers[0], cell_mass_buffers[1]);
+        }
+
+        // compute parameters
+        ComputeParameters compute_parameters;
+        compute_parameters.size = num_particles;
+        compute_parameters.ifps = ifps;
+        compute_parameters.radius = radius;
+        compute_parameters.grid_size = grid_size;
+        compute_parameters.grid_scale = 0.25f / radius;
+        compute_parameters.ranges_offset = TS_ALIGN4(num_particles) * 2;
+
+
+        // Zero-Out cell mass/velocity
+        device.clearBuffer(cell_velocity_buffers[0]);
+        device.clearBuffer(cell_velocity_buffers[1]);
+        device.clearBuffer(cell_mass_buffers[0]);
+        device.clearBuffer(cell_mass_buffers[1]);
+
+        // Particle to Grid
+        {
+
+        }
+
+        // Calculate Grid Velocities
+        {
+
+        }
+
+        // Grid to Particle
 		{
-			// create command list
-			Compute compute = device.createCompute();
-
-			// swap buffers
-			if(simulate) {
-				swap(position_buffers[0], position_buffers[1]);
-				swap(velocity_buffers[0], velocity_buffers[1]);
-			}
-
-			// compute parameters
-			ComputeParameters compute_parameters;
-			compute_parameters.size = num_particles;
-			compute_parameters.ifps = ifps;
-			compute_parameters.radius = radius;
-			compute_parameters.grid_size = grid_size;
-			compute_parameters.grid_scale = 0.25f / radius;
-			compute_parameters.ranges_offset = TS_ALIGN4(num_particles) * 2;
-
 			// set simulation kernel
 			compute.setKernel(kernel);
 			compute.setUniform(0, compute_parameters);
 			compute.setStorageBuffers(0, {
-                spatial_buffer,
-				position_buffers[0], velocity_buffers[0],
-				position_buffers[1], velocity_buffers[1],
-                mass_buffer,
+                    spatial_buffer,
+                    particle_position_buffers[0], particle_velocity_buffers[0],
+                    particle_position_buffers[1], particle_velocity_buffers[1],
+                    particle_mass_buffer,
+                    cell_velocity_buffers[0], cell_mass_buffers[0],
+                    cell_velocity_buffers[1], cell_mass_buffers[1],
 			});
 			compute.dispatch(num_particles);
 			compute.barrier(spatial_buffer);
 
 			// dispatch spatial grid
 			spatial_grid.dispatch(compute, spatial_buffer, 0, num_particles, 20);
-			compute.barrier(position_buffers[0]);
+			compute.barrier(particle_position_buffers[0]);
 		}
 		
 		// window target
@@ -202,14 +256,13 @@ int32_t main(int32_t argc, char **argv) {
 			command.setPipeline(pipeline);
 			command.setUniform(0, common_parameters);
 			command.setIndices({ 0, 1, 2, 2, 3, 0 });
-			command.setVertexBuffer(0, position_buffers[0]);
-            command.setStorageBuffer(0, velocity_buffers[0]);
+			command.setVertexBuffer(0, particle_position_buffers[0]);
+            command.setStorageBuffer(0, particle_velocity_buffers[0]);
 			command.drawElementsInstanced(6, 0, num_particles);
 		}
 		target.end();
 		
 		if(!window.present()) return false;
-		
 		if(!device.check()) return false;
 		
 		return true;

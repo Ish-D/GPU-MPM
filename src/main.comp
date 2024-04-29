@@ -12,14 +12,17 @@ layout(std140, binding = 0) uniform ComputeParameters {
 };
 
 layout(std430, binding = 1) buffer GridBuffer { uint grid_buffer[]; };
-layout(std430, binding = 2) writeonly buffer DestPositionBuffer { vec4 dest_position_buffer[]; };
-layout(std430, binding = 3) writeonly buffer DestVelocityBuffer { vec4 dest_velocity_buffer[]; };
+layout(std430, binding = 2) writeonly buffer DstPositionBuffer { vec4 dest_position_buffer[]; };
+layout(std430, binding = 3) writeonly buffer DstVelocityBuffer { vec4 dest_velocity_buffer[]; };
 layout(std430, binding = 4) readonly buffer SrcPositionBuffer { vec4 src_position_buffer[]; };
 layout(std430, binding = 5) readonly buffer SrcVelocityBuffer { vec4 src_velocity_buffer[]; };
 layout(std430, binding = 6) readonly buffer massBuffer {float mass_buffer[];};
 
-/*
- */
+layout(std430, binding = 8) writeonly buffer DstCellVelocity {float dst_cell_velocity[];};
+layout(std430, binding = 7) writeonly buffer DstCellMass {float dst_cell_mass[];};
+layout(std430, binding = 10) readonly buffer SrcCellVelocity {float src_cell_velocity[];};
+layout(std430, binding = 9) readonly buffer SrcCellMass {float src_cell_mass[];};
+
 uvec3 get_index(vec3 position, float grid_scale, float offset) {
 	return uvec3(floor(position * grid_scale + 1024.0f + offset));
 }
@@ -51,7 +54,6 @@ vec3 sphere_collision(vec3 position_0, vec3 velocity_0, vec3 position_1, vec3 ve
 	}
 	return vec3(0.0f);
 }
-
 
 void main() {
 

@@ -2,7 +2,7 @@
 
 layout(location = 0) in vec3 s_normal;
 layout(location = 1) in int id;
-layout(std430, binding = 1) buffer velocityBuffer { vec4 velocity[]; };
+layout(std430, binding = 1) buffer readonly velocityBuffer { vec4 velocity[]; };
 
 layout(location = 0) out vec4 out_color;
 
