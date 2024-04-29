@@ -9,13 +9,8 @@
 #include <parallel/TellusimRadixSort.h>
 #include <parallel/TellusimSpatialGrid.h>
 
-#include <iostream>
-/*
- */
 using namespace Tellusim;
 
-/*
- */
 int32_t main(int32_t argc, char **argv) {
 	
 	DECLARE_WINDOW
@@ -40,18 +35,13 @@ int32_t main(int32_t argc, char **argv) {
 		float32_t radius;
 	};
 
-
-
 	// spatial parameters
 	const uint32_t grid_size = 64;
 	const uint32_t group_size = 128;
 	constexpr float32_t radius = 0.1f;
 	constexpr float32_t ifps = 1.0f / 400.0f;
-	#if _ANDROID || _IOS
-		constexpr uint32_t size = 24;
-	#else
-		constexpr uint32_t size = 32;
-	#endif
+
+    constexpr uint32_t size = 32;
 	constexpr uint32_t num_particles = size * size * size;
 
 	// create device
@@ -79,7 +69,9 @@ int32_t main(int32_t argc, char **argv) {
 	pipeline.setDepthFormat(window.getDepthFormat());
 	pipeline.setDepthFunc(Pipeline::DepthFuncLess);
 	pipeline.addAttribute(Pipeline::AttributePosition, FormatRGBAf32, 0, 0, sizeof(Vector4f), 1);
-	if(!pipeline.loadShaderGLSL(Shader::TypeVertex, "../src/main.vert", "VERTEX_SHADER=1")) return 1;
+    pipeline.addStorage(Shader::MaskFragment, false); // Pass velocity into fragment
+
+    if(!pipeline.loadShaderGLSL(Shader::TypeVertex, "../src/main.vert", "VERTEX_SHADER=1")) return 1;
 	if(!pipeline.loadShaderGLSL(Shader::TypeFragment, "../src/main.frag", "FRAGMENT_SHADER=1")) return 1;
 	if(!pipeline.create()) return 1;
 	
@@ -155,20 +147,17 @@ int32_t main(int32_t argc, char **argv) {
 		if(window.getKeyboardKey('s')) {
 			frame_counter = 0;
 		}
-		
-		#if _EMSCRIPTEN
-			for(float32_t i = 0.0f; i < 1.0f / (ifps * 60.0f); i += 1.0f)
-		#endif
+
 		{
 			// create command list
 			Compute compute = device.createCompute();
-			
+
 			// swap buffers
 			if(simulate) {
 				swap(position_buffers[0], position_buffers[1]);
 				swap(velocity_buffers[0], velocity_buffers[1]);
 			}
-			
+
 			// compute parameters
 			ComputeParameters compute_parameters;
 			compute_parameters.size = num_particles;
@@ -177,25 +166,26 @@ int32_t main(int32_t argc, char **argv) {
 			compute_parameters.grid_size = grid_size;
 			compute_parameters.grid_scale = 0.25f / radius;
 			compute_parameters.ranges_offset = TS_ALIGN4(num_particles) * 2;
-			
+
 			// set simulation kernel
 			compute.setKernel(kernel);
 			compute.setUniform(0, compute_parameters);
-			compute.setStorageBuffers(0, { spatial_buffer,
+			compute.setStorageBuffers(0, {
+                spatial_buffer,
 				position_buffers[0], velocity_buffers[0],
 				position_buffers[1], velocity_buffers[1],
                 mass_buffer,
 			});
 			compute.dispatch(num_particles);
 			compute.barrier(spatial_buffer);
-			
+
 			// dispatch spatial grid
 			spatial_grid.dispatch(compute, spatial_buffer, 0, num_particles, 20);
 			compute.barrier(position_buffers[0]);
 		}
 		
 		// window target
-		target.setClearColor(0.2f, 0.2f, 0.2f, 1.0f);
+		target.setClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 		target.begin();
 		{
 			// create command list
@@ -207,12 +197,13 @@ int32_t main(int32_t argc, char **argv) {
 			common_parameters.modelview = Matrix4x4f::lookAt(Vector3f(16.0f, 0.0f, 8.0f), Vector3f(0.0f, 0.0f, 0.0f), Vector3f(0.0f, 0.0f, 1.0f));
 			if(target.isFlipped()) common_parameters.projection = Matrix4x4f::scale(1.0f, -1.0f, 1.0f) * common_parameters.projection;
 			common_parameters.radius = radius;
-			
+
 			// draw particles
 			command.setPipeline(pipeline);
 			command.setUniform(0, common_parameters);
 			command.setIndices({ 0, 1, 2, 2, 3, 0 });
 			command.setVertexBuffer(0, position_buffers[0]);
+            command.setStorageBuffer(0, velocity_buffers[0]);
 			command.drawElementsInstanced(6, 0, num_particles);
 		}
 		target.end();

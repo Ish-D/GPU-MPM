@@ -9,11 +9,11 @@ layout(std140, row_major, binding = 0) uniform CommonParameters {
 };
 
 layout(location = 0) out vec3 s_normal;
-
+layout(location = 1) out int id;
 
 void main() {
-
     vec4 position = vec4(in_position.xyz, 1.0f);
+    id = gl_InstanceID;
     gl_Position = projection * (modelview * position);
 
     uint index = gl_VertexIndex;
