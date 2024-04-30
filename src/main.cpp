@@ -60,17 +60,17 @@ int32_t main(int32_t argc, char **argv) {
 
     // Particle to grid kernel
     Kernel particleToGrid = device.createKernel().setUniforms(1).setStorages(kernel_buffers, false);
-    if(!particleToGrid.loadShaderGLSL("../src/particleToGrid.comp", "GROUP_SIZE=%uu", group_size)) return 1;
+    if(!particleToGrid.loadShaderGLSL("../../src/particleToGrid.comp", "GROUP_SIZE=%uu", group_size)) return 1;
     if(!particleToGrid.create()) return 1;
 
     // Update Grid Kernel
     Kernel updateGrid = device.createKernel().setUniforms(1).setStorages(kernel_buffers, false);
-    if(!updateGrid.loadShaderGLSL("../src/updateGrid.comp", "GROUP_SIZE=%uu", group_size)) return 1;
+    if(!updateGrid.loadShaderGLSL("../../src/updateGrid.comp", "GROUP_SIZE=%uu", group_size)) return 1;
     if(!updateGrid.create()) return 1;
 
     // Grid to particle kernel
     Kernel gridToParticle = device.createKernel().setUniforms(1).setStorages(kernel_buffers, false);
-    if(!gridToParticle.loadShaderGLSL("../src/gridToParticle.comp", "GROUP_SIZE=%uu", group_size)) return 1;
+    if(!gridToParticle.loadShaderGLSL("../../src/gridToParticle.comp", "GROUP_SIZE=%uu", group_size)) return 1;
     if(!gridToParticle.create()) return 1;
 
 	// create pipeline
@@ -82,8 +82,8 @@ int32_t main(int32_t argc, char **argv) {
 	pipeline.addAttribute(Pipeline::AttributePosition, FormatRGBAf32, 0, 0, sizeof(Vector4f), 1);
     pipeline.addStorage(Shader::MaskFragment, false); // To pass velocity into fragment
 
-    if(!pipeline.loadShaderGLSL(Shader::TypeVertex, "../src/main.vert")) return 1;
-	if(!pipeline.loadShaderGLSL(Shader::TypeFragment, "../src/main.frag")) return 1;
+    if(!pipeline.loadShaderGLSL(Shader::TypeVertex, "../../src/main.vert")) return 1;
+	if(!pipeline.loadShaderGLSL(Shader::TypeFragment, "../../src/main.frag")) return 1;
 	if(!pipeline.create()) return 1;
 	
 	// create particles
@@ -157,6 +157,9 @@ int32_t main(int32_t argc, char **argv) {
 	
 	// create target
 	Target target = device.createTarget(window);
+    
+    // create base persepctive, using for rotation
+    Matrix4x4f baseView = Matrix4x4f::lookAt(Vector3f(16.0f, 0.0f, 8.0f), Vector3f(0.0f, 0.0f, 0.0f), Vector3f(0.0f, 0.0f, 1.0f));
 	
 	// main loop
 	DECLARE_GLOBAL
@@ -260,9 +263,30 @@ int32_t main(int32_t argc, char **argv) {
 			// common parameters
 			CommonParameters common_parameters;
 			common_parameters.projection = Matrix4x4f::perspective(60.0f, (float32_t)window.getWidth() / window.getHeight(), 0.1f, 1000.0f);
-			common_parameters.modelview = Matrix4x4f::lookAt(Vector3f(16.0f, 0.0f, 8.0f), Vector3f(0.0f, 0.0f, 0.0f), Vector3f(0.0f, 0.0f, 1.0f));
+//			common_parameters.modelview = Matrix4x4f::lookAt(Vector3f(16.0f, 0.0f, 8.0f), Vector3f(0.0f, 0.0f, 0.0f), Vector3f(0.0f, 0.0f, 1.0f));
+            common_parameters.modelview = baseView;
 			if(target.isFlipped()) common_parameters.projection = Matrix4x4f::scale(1.0f, -1.0f, 1.0f) * common_parameters.projection;
 			common_parameters.radius = radius;
+            
+            // move around scene (1 and 2 = x, 3 and 4 = y, 5 and 6 = z)
+            if(window.getKeyboardKey('1')) {
+                baseView = baseView * Matrix4x4f::rotateX(-0.5f);
+            }
+            if(window.getKeyboardKey('2')) {
+                baseView = baseView * Matrix4x4f::rotateX(0.5f);
+            }
+            if(window.getKeyboardKey('3')) {
+                baseView = baseView * Matrix4x4f::rotateY(-0.5f);
+            }
+            if(window.getKeyboardKey('4')) {
+                baseView = baseView * Matrix4x4f::rotateY(0.5f);
+            }
+            if(window.getKeyboardKey('5')) {
+                baseView = baseView * Matrix4x4f::rotateZ(-0.5f);
+            }
+            if(window.getKeyboardKey('6')) {
+                baseView = baseView * Matrix4x4f::rotateZ(0.5f);
+            }
 
 			// draw particles
 			command.setPipeline(pipeline);
