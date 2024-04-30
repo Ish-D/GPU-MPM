@@ -57,16 +57,21 @@ int32_t main(int32_t argc, char **argv) {
 	
 	// shader cache
 	Shader::setCache("main.cache");
-	
-	// create kernel
-	Kernel kernel = device.createKernel().setUniforms(1).setStorages(kernel_buffers, false);
-	if(!kernel.loadShaderGLSL("../src/main.comp", "GROUP_SIZE=%uu", group_size)) return 1;
-	if(!kernel.create()) return 1;
 
     // Particle to grid kernel
-//    Kernel particleToGrid = device.createKernel().setUniforms(1).setStorages(kernel_buffers, false);
-//    if(!kernel.loadShaderGLSL("../src/particleToGrid.comp", "GROUP_SIZE=%uu", group_size)) return 1;
-//    if(!kernel.create()) return 1;
+    Kernel particleToGrid = device.createKernel().setUniforms(1).setStorages(kernel_buffers, false);
+    if(!particleToGrid.loadShaderGLSL("../src/particleToGrid.comp", "GROUP_SIZE=%uu", group_size)) return 1;
+    if(!particleToGrid.create()) return 1;
+
+    // Update Grid Kernel
+    Kernel updateGrid = device.createKernel().setUniforms(1).setStorages(kernel_buffers, false);
+    if(!updateGrid.loadShaderGLSL("../src/updateGrid.comp", "GROUP_SIZE=%uu", group_size)) return 1;
+    if(!updateGrid.create()) return 1;
+
+    // Grid to particle kernel
+    Kernel gridToParticle = device.createKernel().setUniforms(1).setStorages(kernel_buffers, false);
+    if(!gridToParticle.loadShaderGLSL("../src/gridToParticle.comp", "GROUP_SIZE=%uu", group_size)) return 1;
+    if(!gridToParticle.create()) return 1;
 
 	// create pipeline
 	Pipeline pipeline = device.createPipeline();
@@ -75,7 +80,7 @@ int32_t main(int32_t argc, char **argv) {
 	pipeline.setDepthFormat(window.getDepthFormat());
 	pipeline.setDepthFunc(Pipeline::DepthFuncLess);
 	pipeline.addAttribute(Pipeline::AttributePosition, FormatRGBAf32, 0, 0, sizeof(Vector4f), 1);
-    pipeline.addStorage(Shader::MaskFragment, false); // Pass velocity into fragment
+    pipeline.addStorage(Shader::MaskFragment, false); // To pass velocity into fragment
 
     if(!pipeline.loadShaderGLSL(Shader::TypeVertex, "../src/main.vert")) return 1;
 	if(!pipeline.loadShaderGLSL(Shader::TypeFragment, "../src/main.frag")) return 1;
@@ -84,10 +89,13 @@ int32_t main(int32_t argc, char **argv) {
 	// create particles
 	Array<Vector4f> particle_positions(num_particles);
 	Array<Vector4f> particle_velocities(num_particles);
+    Array<Matrix4x4f> particle_momentum(num_particles);
+    Array<Matrix4x4f> particle_deformation(num_particles);
     Array<float> particle_masses(num_particles);
+    Array<float> particle_volumes(num_particles);
 
-    Array<float> cell_masses(grid_size);
-    Array<Vector4f> cell_velocities(grid_size);
+    Array<Vector4f> cell_velocities(grid_size * grid_size * grid_size);
+    Array<float> cell_masses(grid_size * grid_size * grid_size);
 
 	Matrix4x4f transform = Matrix4x4f::translate(0.0f, 0.0f, size * radius * 2.0f) * Matrix4x4f::rotateY(35.3f) * Matrix4x4f::rotateX(45.0f);
 	for(uint32_t z = 0, index = 0; z < size; z++) {
@@ -99,14 +107,22 @@ int32_t main(int32_t argc, char **argv) {
 				if(index < num_particles) {
                     // set initial particle mass, velocity, pos
 					particle_positions[index] = transform * Vector4f(X, Y, Z, 1.0f);
-                    particle_velocities[index] = Vector4f(0.0f);
+                    particle_velocities[index] = Vector4f(0.0f, 0.0f, 0.0f, 0.0f);
                     particle_masses[index] = 1.0f;
+                    particle_volumes[index] = 0.0f;
+                    particle_momentum[index] = Matrix4x4f (0.0f); // fully 0 matrix
+                    particle_deformation[index] = Matrix4x4f(1.0f, 0.0f, 0.0f, 0.0f,
+                                                             0.0f, 1.0f, 0.0f, 0.0f,
+                                                             0.0f, 0.0f, 1.0f, 0.0f,
+                                                             0.0f, 0.0f, 0.0f, 1.0f); // Identity matrix
 				}
 			}
 		}
 	}
 
-    for (uint32_t i = 0; i<grid_size; i++) {
+    // Initialize cell masses & velocities to 0
+    // Will use same data later on to reset the buffers every frame
+    for (uint32_t i = 0; i <grid_size * grid_size * grid_size; i++) {
         cell_masses[i] = 0;
         cell_velocities[i] = Vector4f(0.0f);
     }
@@ -114,42 +130,30 @@ int32_t main(int32_t argc, char **argv) {
 	// create particle buffers
 	Buffer particle_position_buffers[2];
 	Buffer particle_velocity_buffers[2];
-    Buffer particle_mass_buffer; // Constant, so only need one
+    Buffer particle_mass_buffer;
+    Buffer particle_volume_buffer;
+    Buffer particle_momentum_buffer;
+    Buffer particle_deformation_buffer;
 
 	particle_position_buffers[0] = device.createBuffer(Buffer::FlagVertex | Buffer::FlagStorage, particle_positions.get(), particle_positions.bytes());
     particle_position_buffers[1] = device.createBuffer(Buffer::FlagVertex | Buffer::FlagStorage, particle_positions.bytes());
     particle_velocity_buffers[0] = device.createBuffer(Buffer::FlagStorage, particle_velocities.get(), particle_velocities.bytes());
     particle_velocity_buffers[1] = device.createBuffer(Buffer::FlagStorage, particle_velocities.bytes());
     particle_mass_buffer = device.createBuffer(Buffer::FlagStorage, particle_masses.get(), particle_masses.bytes());
+    particle_volume_buffer = device.createBuffer(Buffer::FlagStorage, particle_volumes.get(), particle_volumes.bytes());
+    particle_momentum_buffer = device.createBuffer(Buffer::FlagStorage, particle_momentum.get(), particle_momentum.bytes());
+    particle_deformation_buffer = device.createBuffer(Buffer::FlagStorage, particle_deformation.get(), particle_deformation.bytes());
 
     if(!particle_position_buffers[0] || !particle_position_buffers[1]) return 1;
     if(!particle_velocity_buffers[0] || !particle_velocity_buffers[1]) return 1;
-    if (!particle_mass_buffer) return 1;
+    if (!particle_momentum_buffer || !particle_deformation_buffer) return 1;
+    if (!particle_mass_buffer || !particle_volume_buffer) return 1;
 
     // create cell buffers
-    Buffer cell_velocity_buffers[2];
-    Buffer cell_mass_buffers[2];
+    Buffer cell_velocity_buffer = device.createBuffer(Buffer::FlagStorage, cell_velocities.get(), cell_velocities.bytes());
+    Buffer cell_mass_buffer = device.createBuffer(Buffer::FlagStorage,  cell_masses.get(), cell_masses.bytes());
 
-    cell_velocity_buffers[0] = device.createBuffer(Buffer::FlagStorage, cell_velocities.get(), cell_velocities.bytes());
-    cell_velocity_buffers[1] = device.createBuffer(Buffer::FlagStorage,  cell_velocities.bytes());
-    cell_mass_buffers[0] = device.createBuffer(Buffer::FlagStorage, cell_masses.get(), cell_masses.bytes());
-    cell_mass_buffers[1] = device.createBuffer(Buffer::FlagStorage, cell_masses.bytes());
-
-    if (!cell_velocity_buffers[0] || !cell_velocity_buffers[1]) return 1;
-    if (!cell_mass_buffers[0] || !cell_mass_buffers[1]) return 1;
-
-	// create spatial grid
-	RadixSort radix_sort;
-	PrefixScan prefix_scan;
-	SpatialGrid spatial_grid;
-	if(!radix_sort.create(device, RadixSort::ModeSingle, prefix_scan, num_particles, group_size)) return 1;
-	if(!spatial_grid.create(device, radix_sort, group_size)) return 1;
-	
-	// create spatial buffer
-	uint32_t hashes_size = num_particles * 2;
-	uint32_t ranges_size = group_size * group_size * group_size * 2;
-	auto spatial_buffer = device.createBuffer(Buffer::FlagStorage, sizeof(uint32_t) * (hashes_size + ranges_size));
-	if(!spatial_buffer || !device.clearBuffer(spatial_buffer)) return 1;
+    if (!cell_velocity_buffer || !cell_mass_buffer) return 1;
 	
 	// create target
 	Target target = device.createTarget(window);
@@ -170,13 +174,18 @@ int32_t main(int32_t argc, char **argv) {
 		if(window.getKeyboardKey(' ')) {
 			device.setBuffer(particle_position_buffers[0], particle_positions.get());
 			device.setBuffer(particle_velocity_buffers[0], particle_velocities.get());
-            device.setBuffer(cell_velocity_buffers[0], cell_masses.get());
-            device.setBuffer(cell_mass_buffers[0], cell_masses.get());
+            device.setBuffer(particle_deformation_buffer, particle_deformation.get());
+            device.setBuffer(particle_momentum_buffer, particle_momentum.get());
             device.setBuffer(particle_mass_buffer, particle_masses.get());
+            device.setBuffer(particle_volume_buffer, particle_volumes.get());
+
+            device.setBuffer(cell_velocity_buffer, cell_velocities.get());
+            device.setBuffer(cell_mass_buffer, cell_masses.get());
+
 			frame_counter = 0;
 		}
 		if(window.getKeyboardKey('s')) {
-			frame_counter = 0;
+			simulate = false;
 		}
 
         // create command list
@@ -186,9 +195,6 @@ int32_t main(int32_t argc, char **argv) {
         if(simulate) {
             swap(particle_position_buffers[0], particle_position_buffers[1]);
             swap(particle_velocity_buffers[0], particle_velocity_buffers[1]);
-
-            swap(cell_velocity_buffers[0], cell_velocity_buffers[1]);
-            swap(cell_mass_buffers[0], cell_mass_buffers[1]);
         }
 
         // compute parameters
@@ -200,43 +206,49 @@ int32_t main(int32_t argc, char **argv) {
         compute_parameters.grid_scale = 0.25f / radius;
         compute_parameters.ranges_offset = TS_ALIGN4(num_particles) * 2;
 
-
         // Zero-Out cell mass/velocity
-        device.clearBuffer(cell_velocity_buffers[0]);
-        device.clearBuffer(cell_velocity_buffers[1]);
-        device.clearBuffer(cell_mass_buffers[0]);
-        device.clearBuffer(cell_mass_buffers[1]);
+        device.setBuffer(cell_velocity_buffer, cell_velocities.get());
+        device.setBuffer(cell_mass_buffer, cell_masses.get());
 
         // Particle to Grid
         {
-
+            compute.setKernel(particleToGrid);
+            compute.setUniform(0, compute_parameters);
+            compute.setStorageBuffers(0, {
+                    particle_position_buffers[1], particle_velocity_buffers[1],
+                    particle_momentum_buffer, particle_deformation_buffer,
+                    particle_mass_buffer, particle_volume_buffer,
+                    cell_velocity_buffer, cell_mass_buffer,
+            });
+            compute.dispatch(num_particles);
+            compute.barrier(particle_volume_buffer);
         }
 
         // Calculate Grid Velocities
         {
-
+            compute.setKernel(updateGrid);
+            compute.setUniform(0, compute_parameters);
+            compute.setStorageBuffers(0, {
+                    cell_velocity_buffer, cell_mass_buffer,
+            });
+            compute.dispatch(grid_size*grid_size*grid_size*2);
+            compute.barrier(cell_velocity_buffer);
         }
 
         // Grid to Particle
-		{
-			// set simulation kernel
-			compute.setKernel(kernel);
-			compute.setUniform(0, compute_parameters);
-			compute.setStorageBuffers(0, {
-                    spatial_buffer,
-                    particle_position_buffers[0], particle_velocity_buffers[0],
+        {
+            compute.setKernel(gridToParticle);
+            compute.setUniform(0, compute_parameters);
+            compute.setStorageBuffers(0, {
                     particle_position_buffers[1], particle_velocity_buffers[1],
-                    particle_mass_buffer,
-                    cell_velocity_buffers[0], cell_mass_buffers[0],
-                    cell_velocity_buffers[1], cell_mass_buffers[1],
-			});
-			compute.dispatch(num_particles);
-			compute.barrier(spatial_buffer);
-
-			// dispatch spatial grid
-			spatial_grid.dispatch(compute, spatial_buffer, 0, num_particles, 20);
-			compute.barrier(particle_position_buffers[0]);
-		}
+                    particle_position_buffers[0], particle_velocity_buffers[0],
+                    particle_momentum_buffer, particle_deformation_buffer,
+                    particle_mass_buffer, particle_volume_buffer,
+                    cell_velocity_buffer, cell_mass_buffer,
+            });
+            compute.dispatch(num_particles);
+            compute.barrier(particle_position_buffers[0]);
+        }
 		
 		// window target
 		target.setClearColor(0.0f, 0.0f, 0.0f, 1.0f);

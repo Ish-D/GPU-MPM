@@ -1,5 +1,109 @@
 #version 430 core
 
-void main(){
+layout(local_size_x = GROUP_SIZE) in;
 
+layout(std140, binding = 0) uniform ComputeParameters {
+    uint size;
+    float ifps;
+    float radius;
+    uint grid_size;
+    float grid_scale;
+    uint ranges_offset;
+};
+
+// Particle Buffers
+layout(std430, binding = 1) readonly buffer SrcPositionBuffer { vec4 position_buffer[]; };
+layout(std430, binding = 2) readonly buffer SrcVelocityBuffer { vec4 velocity_buffer[]; };
+layout(std430, binding = 3) readonly buffer momentumBuffer { mat4 momentum_buffer[]; };
+layout(std430, binding = 4) readonly buffer deformationMatrixBuffer { mat4 deformation_buffer[]; };
+layout(std430, binding = 5) readonly buffer massBuffer {float mass_buffer[];};
+layout(std430, binding = 6) buffer volumeBuffer {float volume_buffer[];};
+
+// Grid/Cell Buffers
+layout(std430, binding = 7) writeonly buffer CellVelocity {vec4 cell_velocity[];};
+layout(std430, binding = 8) writeonly buffer CellMass {float cell_mass[];};
+
+
+uint get_index(vec3 position) {
+    uvec3 upos = ivec3(position);
+    return upos.x + grid_size * (upos.y + grid_size * upos.z);
+}
+
+mat3 inv(mat3 matrix) {
+    vec3 row0 = matrix[0];
+    vec3 row1 = matrix[1];
+    vec3 row2 = matrix[2];
+
+    vec3 minors0 = vec3(
+    determinant(mat2(row1.y, row1.z, row2.y, row2.z)),
+    determinant(mat2(row1.z, row1.x, row2.z, row2.x)),
+    determinant(mat2(row1.x, row1.y, row2.x, row2.y))
+    );
+    vec3 minors1 = vec3(
+    determinant(mat2(row2.y, row2.z, row0.y, row0.z)),
+    determinant(mat2(row2.z, row2.x, row0.z, row0.x)),
+    determinant(mat2(row2.x, row2.y, row0.x, row0.y))
+    );
+    vec3 minors2 = vec3(
+    determinant(mat2(row0.y, row0.z, row1.y, row1.z)),
+    determinant(mat2(row0.z, row0.x, row1.z, row1.x)),
+    determinant(mat2(row0.x, row0.y, row1.x, row1.y))
+    );
+
+    mat3 adj = transpose(mat3(minors0, minors1, minors2));
+
+    return (1.0 / dot(row0, minors0)) * adj;
+}
+
+// Lame parameters for stress-strain relationship
+const float elastic_lambda = 10.0f;
+const float elastic_mu = 20.0f;
+
+void main() {
+    uint global_id = gl_GlobalInvocationID.x;
+    if(global_id >= size) return;
+
+    vec3 position = position_buffer[global_id].xyz;
+    vec3 velocity = velocity_buffer[global_id].xyz;
+    mat3 F = mat3(deformation_buffer[global_id]);
+    float J = determinant(F);
+    float volume = volume_buffer[global_id] * J;
+
+    mat3 F_T = transpose(F);
+    mat3 F_inv = inv(F_T);
+    mat3 F_minus_inv = F - F_inv;
+
+    mat3 P_0 = elastic_mu * F_minus_inv;
+    mat3 P_1 = elastic_lambda * log(J) * F_inv;
+    mat3 P = P_0 + P_1;
+
+    mat3 stress = (1.0f/J) * P*F_T;
+    mat3 momentum_force = -volume * 4 * stress * ifps;
+
+    vec3 cell_idx = vec3(floor(position.x), floor(position.y), floor(position.z));
+    vec3 cell_diff = position.x-cell_idx-vec3(0.5f);
+    mat3 weights = mat3(0.5f * pow(0.5f - cell_diff, 2), 0.75f - pow(cell_diff, 2), 0.5f * pow(0.5f + cell_diff, 2));
+
+    float density = 0.0f;
+    for (int x = 0; x<3; x++) {
+        for (int y = 0; y<3; y++) {
+            for (int z = 0; z<3; z++) {
+                float weight = weights[x].x * weights[y].y * weights[z].z;
+
+                vec3 cell_pos = position + vec3(x,y,z);
+                vec3 cell_dist = cell_pos - position.x + 0.5f;
+                vec3 Q = mat3(momentum_buffer[global_id]) * cell_dist;
+
+                uint idx = get_index(cell_pos);
+
+                cell_mass[idx] += weight * mass_buffer[global_id];
+                cell_velocity[idx] += vec4(velocity + Q, 0.0f);
+
+                vec3 momentum = (momentum_force * weight) * cell_dist;
+                cell_velocity[idx] += vec4(momentum,0.0f);
+            }
+        }
+    }
+
+    volume_buffer[global_id] = mass_buffer[global_id]/density;
 }

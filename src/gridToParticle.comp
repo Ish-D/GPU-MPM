@@ -1,0 +1,73 @@
+#version 430 core
+
+layout(local_size_x = GROUP_SIZE) in;
+
+layout(std140, binding = 0) uniform ComputeParameters {
+    uint size;
+    float ifps;
+    float radius;
+    uint grid_size;
+    float grid_scale;
+    uint ranges_offset;
+};
+
+layout(std430, binding = 1) readonly buffer SrcPositionBuffer { vec4 src_position_buffer[]; };
+layout(std430, binding = 2) readonly buffer SrcVelocityBuffer { vec4 src_velocity_buffer[]; };
+
+layout(std430, binding = 3) buffer DstPositionBuffer { vec4 dst_position_buffer[]; };
+layout(std430, binding = 4) buffer DstVelocityBuffer { vec4 dst_velocity_buffer[]; };
+
+layout(std430, binding = 5) buffer momentumBuffer { mat4 momentum_buffer[]; };
+layout(std430, binding = 6) buffer deformationMatrixBuffer { mat4 deformation_buffer[]; };
+layout(std430, binding = 7) readonly buffer massBuffer {float mass_buffer[];};
+layout(std430, binding = 8) buffer volumeBuffer {float volume_buffer[];};
+
+layout(std430, binding = 9) readonly buffer CellVelocity {vec4 cell_velocity[];};
+layout(std430, binding = 10) readonly buffer CellMass {float cell_mass[];};
+
+
+uint get_index(vec3 position) {
+    uvec3 upos = ivec3(position);
+    return upos.x + grid_size * (upos.y + grid_size * upos.z);
+}
+
+void main() {
+    uint global_id = gl_GlobalInvocationID.x;
+    if(global_id > size) return;
+
+    vec3 position = vec3(src_position_buffer[global_id]);
+    vec3 velocity = vec3(0.0f);
+
+    vec3 cell_idx = vec3(floor(position.x), floor(position.y), floor(position.z));
+    vec3 cell_diff = position.x-cell_idx-vec3(0.5f);
+    mat3 weights = mat3(0.5f * pow(0.5f - cell_diff, 2), 0.75f - pow(cell_diff, 2), 0.5f * pow(0.5f + cell_diff, 2));
+
+    mat3 B = mat3(0);
+    for (int x = 0; x<3; x++) {
+        for (int y = 0; y<3; y++) {
+            for (int z = 0; z<3; z++) {
+                float weight = weights[x].x * weights[y].y * weights[z].z;
+                vec3 cell_pos = position + vec3(x,y,z);
+                vec3 cell_dist = cell_pos - position.x + 0.5f;
+
+                uint idx = get_index(src_position_buffer[global_id].xyz + vec3(x,y,z));
+
+                vec3 weighted_velocity = vec3(cell_velocity[idx]) * weight;
+
+                mat3 term = mat3(weighted_velocity * cell_dist.x, weighted_velocity * cell_dist.y, weighted_velocity * cell_dist.z);
+                B += term;
+                velocity += weighted_velocity;
+            }
+        }
+    }
+
+    B *= 4;
+    momentum_buffer[global_id] = mat4(vec4(B[0], 0.0f), vec4(B[1], 0.0f), vec4(B[2], 0.0f), vec4(0.0f));
+    position += velocity * ifps;
+
+    mat4 Fp_new = mat4(1.0f) + ifps * momentum_buffer[global_id];
+    deformation_buffer[global_id] = Fp_new * deformation_buffer[global_id];
+
+    dst_position_buffer[global_id] = vec4(position, 0.0f);
+    dst_velocity_buffer[global_id] = vec4(velocity, 0.0f);
+}
