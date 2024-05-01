@@ -41,7 +41,7 @@ int32_t main(int32_t argc, char **argv) {
 	constexpr float32_t radius = 0.1f;
 	constexpr float32_t ifps = 1.0f / 400.0f;
 
-    constexpr uint32_t size = 32;
+    constexpr uint32_t size = 16;
 	constexpr uint32_t num_particles = size * size * size;
     constexpr uint32_t kernel_buffers = 10;
 
@@ -58,19 +58,24 @@ int32_t main(int32_t argc, char **argv) {
 	// shader cache
 	Shader::setCache("main.cache");
 
+    // Clear grid kernel
+    Kernel clearGrid = device.createKernel().setUniforms(1).setStorages(2, false);
+    if(!clearGrid.loadShaderGLSL("../src/clearGrid.comp", "GROUP_SIZE=%uu", group_size)) return 1;
+    if(!clearGrid.create()) return 1;
+
     // Particle to grid kernel
     Kernel particleToGrid = device.createKernel().setUniforms(1).setStorages(kernel_buffers, false);
-    if(!particleToGrid.loadShaderGLSL("../../src/particleToGrid.comp", "GROUP_SIZE=%uu", group_size)) return 1;
+    if(!particleToGrid.loadShaderGLSL("../src/particleToGrid.comp", "GROUP_SIZE=%uu", group_size)) return 1;
     if(!particleToGrid.create()) return 1;
 
     // Update Grid Kernel
-    Kernel updateGrid = device.createKernel().setUniforms(1).setStorages(kernel_buffers, false);
-    if(!updateGrid.loadShaderGLSL("../../src/updateGrid.comp", "GROUP_SIZE=%uu", group_size)) return 1;
+    Kernel updateGrid = device.createKernel().setUniforms(1).setStorages(2, false);
+    if(!updateGrid.loadShaderGLSL("../src/updateGrid.comp", "GROUP_SIZE=%uu", group_size)) return 1;
     if(!updateGrid.create()) return 1;
 
     // Grid to particle kernel
     Kernel gridToParticle = device.createKernel().setUniforms(1).setStorages(kernel_buffers, false);
-    if(!gridToParticle.loadShaderGLSL("../../src/gridToParticle.comp", "GROUP_SIZE=%uu", group_size)) return 1;
+    if(!gridToParticle.loadShaderGLSL("../src/gridToParticle.comp", "GROUP_SIZE=%uu", group_size)) return 1;
     if(!gridToParticle.create()) return 1;
 
 	// create pipeline
@@ -82,8 +87,8 @@ int32_t main(int32_t argc, char **argv) {
 	pipeline.addAttribute(Pipeline::AttributePosition, FormatRGBAf32, 0, 0, sizeof(Vector4f), 1);
     pipeline.addStorage(Shader::MaskFragment, false); // To pass velocity into fragment
 
-    if(!pipeline.loadShaderGLSL(Shader::TypeVertex, "../../src/main.vert")) return 1;
-	if(!pipeline.loadShaderGLSL(Shader::TypeFragment, "../../src/main.frag")) return 1;
+    if(!pipeline.loadShaderGLSL(Shader::TypeVertex, "../src/main.vert")) return 1;
+	if(!pipeline.loadShaderGLSL(Shader::TypeFragment, "../src/main.frag")) return 1;
 	if(!pipeline.create()) return 1;
 	
 	// create particles
@@ -210,8 +215,16 @@ int32_t main(int32_t argc, char **argv) {
         compute_parameters.ranges_offset = TS_ALIGN4(num_particles) * 2;
 
         // Zero-Out cell mass/velocity
-        device.setBuffer(cell_velocity_buffer, cell_velocities.get());
-        device.setBuffer(cell_mass_buffer, cell_masses.get());
+        {
+            compute.setKernel(clearGrid);
+            compute.setUniform(0, compute_parameters);
+            compute.setStorageBuffers(0, {
+                    cell_velocity_buffer, cell_mass_buffer,
+            });
+            compute.dispatch(grid_size);
+
+            compute.barrier({cell_velocity_buffer, cell_mass_buffer});
+        }
 
         // Particle to Grid
         {
@@ -224,7 +237,12 @@ int32_t main(int32_t argc, char **argv) {
                     cell_velocity_buffer, cell_mass_buffer,
             });
             compute.dispatch(num_particles);
-            compute.barrier(particle_volume_buffer);
+
+            compute.barrier({particle_position_buffers[1], particle_velocity_buffers[1],
+                             particle_position_buffers[0], particle_velocity_buffers[0],
+                             particle_momentum_buffer, particle_deformation_buffer,
+                             particle_mass_buffer, particle_volume_buffer,
+                             cell_velocity_buffer, cell_mass_buffer});
         }
 
         // Calculate Grid Velocities
@@ -234,8 +252,8 @@ int32_t main(int32_t argc, char **argv) {
             compute.setStorageBuffers(0, {
                     cell_velocity_buffer, cell_mass_buffer,
             });
-            compute.dispatch(grid_size*grid_size*grid_size*2);
-            compute.barrier(cell_velocity_buffer);
+            compute.dispatch(grid_size*grid_size*grid_size);
+            compute.barrier({cell_velocity_buffer, cell_mass_buffer,});
         }
 
         // Grid to Particle
@@ -250,7 +268,12 @@ int32_t main(int32_t argc, char **argv) {
                     cell_velocity_buffer, cell_mass_buffer,
             });
             compute.dispatch(num_particles);
-            compute.barrier(particle_position_buffers[0]);
+
+            compute.barrier({particle_position_buffers[1], particle_velocity_buffers[1],
+                             particle_position_buffers[0], particle_velocity_buffers[0],
+                             particle_momentum_buffer, particle_deformation_buffer,
+                             particle_mass_buffer, particle_volume_buffer,
+                             cell_velocity_buffer, cell_mass_buffer});
         }
 		
 		// window target
@@ -269,23 +292,24 @@ int32_t main(int32_t argc, char **argv) {
 			common_parameters.radius = radius;
             
             // move around scene (1 and 2 = x, 3 and 4 = y, 5 and 6 = z)
+            constexpr float sens = 0.05f;
             if(window.getKeyboardKey('1')) {
-                baseView = baseView * Matrix4x4f::rotateX(-0.5f);
+                baseView = baseView * Matrix4x4f::rotateX(-sens);
             }
             if(window.getKeyboardKey('2')) {
-                baseView = baseView * Matrix4x4f::rotateX(0.5f);
+                baseView = baseView * Matrix4x4f::rotateX(sens);
             }
             if(window.getKeyboardKey('3')) {
-                baseView = baseView * Matrix4x4f::rotateY(-0.5f);
+                baseView = baseView * Matrix4x4f::rotateY(-sens);
             }
             if(window.getKeyboardKey('4')) {
-                baseView = baseView * Matrix4x4f::rotateY(0.5f);
+                baseView = baseView * Matrix4x4f::rotateY(sens);
             }
             if(window.getKeyboardKey('5')) {
-                baseView = baseView * Matrix4x4f::rotateZ(-0.5f);
+                baseView = baseView * Matrix4x4f::rotateZ(-sens);
             }
             if(window.getKeyboardKey('6')) {
-                baseView = baseView * Matrix4x4f::rotateZ(0.5f);
+                baseView = baseView * Matrix4x4f::rotateZ(sens);
             }
 
 			// draw particles

@@ -21,7 +21,7 @@ layout(std430, binding = 6) buffer volumeBuffer {float volume_buffer[];};
 
 // Grid/Cell Buffers
 layout(std430, binding = 7) writeonly buffer CellVelocity {vec4 cell_velocity[];};
-layout(std430, binding = 8) writeonly buffer CellMass {float cell_mass[];};
+layout(std430, binding = 8) buffer CellMass {float cell_mass[];};
 
 
 uint get_index(vec3 position) {
@@ -61,7 +61,7 @@ const float elastic_mu = 20.0f;
 
 void main() {
     uint global_id = gl_GlobalInvocationID.x;
-    if(global_id >= size) return;
+    [[branch]] if(global_id >= size) return;
 
     vec3 position = position_buffer[global_id].xyz;
     vec3 velocity = velocity_buffer[global_id].xyz;
@@ -88,6 +88,8 @@ void main() {
     for (int x = 0; x<3; x++) {
         for (int y = 0; y<3; y++) {
             for (int z = 0; z<3; z++) {
+                vec4 tempVelocity = vec4(0.0f);
+
                 float weight = weights[x].x * weights[y].y * weights[z].z;
 
                 vec3 cell_pos = position + vec3(x,y,z);
@@ -96,14 +98,20 @@ void main() {
 
                 uint idx = get_index(cell_pos);
 
-                cell_mass[idx] += weight * mass_buffer[global_id];
-                cell_velocity[idx] += vec4(velocity + Q, 0.0f);
+//                float weightedMass = weight * mass_buffer[global_id];
+                float weightedMass = mass_buffer[global_id]/27.0f;
+                cell_mass[idx] += weightedMass;
 
-                vec3 momentum = (momentum_force * weight) * cell_dist;
-                cell_velocity[idx] += vec4(momentum,0.0f);
+                tempVelocity += vec4(velocity + Q, 0.0f)*0.00001f;
+
+                vec3 momentum = (momentum_force * weight) * cell_dist * 0.0000000000000000000000000000000000000000000007f;
+                tempVelocity += vec4(momentum,0.0f);
+
+                density += cell_mass[idx] * weight;
+                cell_velocity[idx] = tempVelocity;
             }
         }
     }
 
-    volume_buffer[global_id] = mass_buffer[global_id]/density;
+//    volume_buffer[global_id] = mass_buffer[global_id]/density;
 }

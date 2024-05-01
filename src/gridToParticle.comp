@@ -33,7 +33,7 @@ uint get_index(vec3 position) {
 
 void main() {
     uint global_id = gl_GlobalInvocationID.x;
-    if(global_id > size) return;
+    [[branch]] if(global_id >= size) return;
 
     vec3 position = vec3(src_position_buffer[global_id]);
     vec3 velocity = vec3(0.0f);
@@ -63,10 +63,18 @@ void main() {
 
     B *= 4;
     momentum_buffer[global_id] = mat4(vec4(B[0], 0.0f), vec4(B[1], 0.0f), vec4(B[2], 0.0f), vec4(0.0f));
-    position += velocity * ifps;
+
+
 
     mat4 Fp_new = mat4(1.0f) + ifps * momentum_buffer[global_id];
     deformation_buffer[global_id] = Fp_new * deformation_buffer[global_id];
+
+     [[branch]] if (position.z > 0.5f) {
+        position += velocity * ifps;
+    }
+    else {
+        velocity.z = 0.0f;
+    }
 
     dst_position_buffer[global_id] = vec4(position, 0.0f);
     dst_velocity_buffer[global_id] = vec4(velocity, 0.0f);
