@@ -225,12 +225,11 @@ int32_t main(int32_t argc, char **argv) {
                 baseView = baseView * Matrix4x4f::rotateZ(sens);
             }
 
-            std::printf("%f %f\n", window.getMouseX()/100.0f - 5.0f, window.getMouseY()/100.0f - 5.0f);
             float mouseX = window.getMouseX()/100.0f - 5.0f;
             float mouseY = window.getMouseY()/100.0f - 5.0f;
 
-            if (mouseX > 0.0f && mouseX < 5.0f && mouseY > -3.0f && mouseY < 3.0f)
-                interactionForces[0] = Vector4f(mouseX, mouseY, 0.0f, 1.0f);
+            if (mouseX > -5.0f && mouseX < 10.0f && mouseY > -6.0f && mouseY < 6.0f)
+                interactionForces[0] = Vector4f(-mouseY, mouseX, 0.0f, 1.0f);
             else
                 interactionForces[0] = Vector4f(0.0f, 0.0f, 0.0f, 0.0f);
             device.setBuffer(interactionBuffer, interactionForces.get());
