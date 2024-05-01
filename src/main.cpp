@@ -125,8 +125,9 @@ int32_t main(int32_t argc, char **argv) {
 	
 	// create target
 	Target target = device.createTarget(window);
-	
-	// main loop
+    Matrix4x4f baseView = Matrix4x4f::lookAt(Vector3f(16.0f, 0.0f, 8.0f), Vector3f(0.0f, 0.0f, 0.0f), Vector3f(0.0f, 0.0f, 1.0f));
+
+    // main loop
 	DECLARE_GLOBAL
 	window.run([&]() -> bool {
 		DECLARE_COMMON
@@ -194,9 +195,30 @@ int32_t main(int32_t argc, char **argv) {
 			// common parameters
 			CommonParameters common_parameters;
 			common_parameters.projection = Matrix4x4f::perspective(60.0f, (float32_t)window.getWidth() / window.getHeight(), 0.1f, 1000.0f);
-			common_parameters.modelview = Matrix4x4f::lookAt(Vector3f(16.0f, 0.0f, 8.0f), Vector3f(0.0f, 0.0f, 0.0f), Vector3f(0.0f, 0.0f, 1.0f));
+			common_parameters.modelview = baseView;
 			if(target.isFlipped()) common_parameters.projection = Matrix4x4f::scale(1.0f, -1.0f, 1.0f) * common_parameters.projection;
 			common_parameters.radius = radius;
+
+            // move around scene (1 and 2 = x, 3 and 4 = y, 5 and 6 = z)
+            constexpr float sens = 0.05f;
+            if(window.getKeyboardKey('1')) {
+                baseView = baseView * Matrix4x4f::rotateX(-sens);
+            }
+            if(window.getKeyboardKey('2')) {
+                baseView = baseView * Matrix4x4f::rotateX(sens);
+            }
+            if(window.getKeyboardKey('3')) {
+                baseView = baseView * Matrix4x4f::rotateY(-sens);
+            }
+            if(window.getKeyboardKey('4')) {
+                baseView = baseView * Matrix4x4f::rotateY(sens);
+            }
+            if(window.getKeyboardKey('5')) {
+                baseView = baseView * Matrix4x4f::rotateZ(-sens);
+            }
+            if(window.getKeyboardKey('6')) {
+                baseView = baseView * Matrix4x4f::rotateZ(sens);
+            }
 
 			// draw particles
 			command.setPipeline(pipeline);

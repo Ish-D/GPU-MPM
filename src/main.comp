@@ -88,9 +88,17 @@ void main() {
 	float len = length(impulse);
 	if(len > 32.0f) impulse *= 32.0f / len;
 
+	// Limit position to a cube
+	[[branch]] if (position.x > 5.0f) velocity.x = 0.0f;
+	[[branch]] if (position.x < -5.0f) velocity.x = 0.0f;
+	[[branch]] if (position.y > 5.0f) velocity.y = 0.0f;
+	[[branch]] if (position.y < -5.0f) velocity.y = 0.0f;
+
 	position += velocity * ifps;
 	velocity.z -= 2.0f * ifps * mass_buffer[global_id];
 	velocity += impulse;
+
+
 
 	dest_position_buffer[global_id] = vec4(position, 0.0f);
 	dest_velocity_buffer[global_id] = vec4(velocity, 0.0f);
