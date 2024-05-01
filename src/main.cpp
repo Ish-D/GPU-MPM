@@ -8,6 +8,13 @@
 #include <parallel/TellusimPrefixScan.h>
 #include <parallel/TellusimRadixSort.h>
 #include <parallel/TellusimSpatialGrid.h>
+#include <io/LasReader.hpp>
+#include <pdal/Writer.hpp>
+#include <pdal/Streamable.hpp>
+#include <pdal/PointView.hpp>
+#include <pdal/util/ProgramArgs.hpp>
+
+#include <iostream>
 
 using namespace Tellusim;
 
@@ -42,8 +49,19 @@ int32_t main(int32_t argc, char **argv) {
 	constexpr float32_t ifps = 1.0f / 400.0f;
 
     constexpr uint32_t size = 16;
-	constexpr uint32_t num_particles = size * size * size;
+	//constexpr uint32_t num_particles = size * size * size;
     constexpr uint32_t kernel_buffers = 10;
+    //read .las file
+    pdal::Options options;
+    pdal::LasReader reader;
+    //pick a file to read
+    options.add("filename", "../src/Abolhole10k.las");
+    reader.setOptions(options);
+    pdal::PointTable table;
+    reader.prepare(table);
+    pdal::PointViewSet pointViewSet = reader.execute(table);
+    pdal::PointViewPtr view = *pointViewSet.begin();
+    uint32_t num_particles = view->size();
 
 	// create device
 	Device device(window);
@@ -103,27 +121,21 @@ int32_t main(int32_t argc, char **argv) {
     Array<float> cell_masses(grid_size * grid_size * grid_size);
 
 	Matrix4x4f transform = Matrix4x4f::translate(0.0f, 0.0f, size * radius * 2.0f) * Matrix4x4f::rotateY(35.3f) * Matrix4x4f::rotateX(45.0f);
-	for(uint32_t z = 0, index = 0; z < size; z++) {
-		float32_t Z = (z - size * 0.5f) * radius * 2.0f;
-		for(uint32_t y = 0; y < size; y++) {
-			float32_t Y = (y - size * 0.5f) * radius * 2.0f;
-			for(uint32_t x = 0; x < size; x++, index++) {
-				float32_t X = (x - size * 0.5f) * radius * 2.0f;
-				if(index < num_particles) {
-                    // set initial particle mass, velocity, pos
-					particle_positions[index] = transform * Vector4f(X, Y, Z, 1.0f);
-                    particle_velocities[index] = Vector4f(0.0f, 0.0f, 0.0f, 0.0f);
-                    particle_masses[index] = 1.0f;
-                    particle_volumes[index] = 0.0f;
-                    particle_momentum[index] = Matrix4x4f (0.0f); // fully 0 matrix
-                    particle_deformation[index] = Matrix4x4f(1.0f, 0.0f, 0.0f, 0.0f,
-                                                             0.0f, 1.0f, 0.0f, 0.0f,
-                                                             0.0f, 0.0f, 1.0f, 0.0f,
-                                                             0.0f, 0.0f, 0.0f, 1.0f); // Identity matrix
-				}
-			}
-		}
-	}
+	for (pdal::PointId idx = 0; idx < num_particles; ++idx) {
+        particle_positions[idx] = transform * Vector4f(view->getFieldAs<double>(pdal::Dimension::Id::X, idx),
+                                                        view->getFieldAs<double>(pdal::Dimension::Id::Y, idx),
+                                                        view->getFieldAs<double>(pdal::Dimension::Id::Z, idx),
+                                                        1.0f);
+        particle_velocities[idx] = Vector4f(0.0f, 0.0f, 0.0f, 0.0f);
+        particle_masses[idx] = 1.0f;
+        particle_volumes[idx] = 0.0f;
+        particle_momentum[idx] = Matrix4x4f (0.0f); // fully 0 matrix
+        particle_deformation[idx] = Matrix4x4f(1.0f, 0.0f, 0.0f, 0.0f,
+                                                 0.0f, 1.0f, 0.0f, 0.0f,
+                                                 0.0f, 0.0f, 1.0f, 0.0f,
+                                                 0.0f, 0.0f, 0.0f, 1.0f); // Identity matrix
+    }
+
 
     // Initialize cell masses & velocities to 0
     // Will use same data later on to reset the buffers every frame
