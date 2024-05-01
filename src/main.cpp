@@ -45,17 +45,14 @@ int32_t main(int32_t argc, char **argv) {
 	// spatial parameters
 	const uint32_t grid_size = 64;
 	const uint32_t group_size = 128;
-	constexpr float32_t radius = 0.1f;
+	constexpr float32_t radius = 0.05f;
     constexpr float32_t ifps = 1.0f / 400.0f;
-
-    constexpr uint32_t size = 32;
-//	constexpr uint32_t num_particles = size * size * size;
 
     //read .las file
     pdal::Options options;
     pdal::LasReader reader;
     //pick a file to read
-    options.add("filename", "../src/models/Abolhole10k.las");
+    options.add("filename", "../src/models/cs184_60k.las");
     reader.setOptions(options);
     pdal::PointTable table;
     reader.prepare(table);
@@ -97,11 +94,12 @@ int32_t main(int32_t argc, char **argv) {
 	// create particles
 	Array<Vector4f> positions(num_particles);
 	Array<Vector4f> velocities(num_particles);
-    Array<Vector4f> accelerations(num_particles);
+    Array<float> densities(num_particles);
+    Array<float> pressures(num_particles);
     Array<float> masses(num_particles);
     Array<Vector4f> interactionForces(10);
 
-	Matrix4x4f transform = Matrix4x4f::translate(0.0f, 0.0f, size * radius * 2.0f) * Matrix4x4f::rotateY(35.3f) * Matrix4x4f::rotateX(45.0f);
+	Matrix4x4f transform = Matrix4x4f::translate(0.0f, 0.0f, 64.0f * radius * 2.0f)  * Matrix4x4f::scale(1.8f) * Matrix4x4f::rotateY(35.3f) * Matrix4x4f::rotateX(45.0f);
 
     for (pdal::PointId idx = 0; idx < num_particles; ++idx) {
         positions[idx] = transform * Vector4f(view->getFieldAs<double>(pdal::Dimension::Id::X, idx),
@@ -109,7 +107,8 @@ int32_t main(int32_t argc, char **argv) {
                                                        view->getFieldAs<double>(pdal::Dimension::Id::Z, idx),
                                                        1.0f);
         velocities[idx] = Vector4f(0.0f);
-        accelerations[idx] = Vector4f(0.0f);
+        pressures[idx] = 0.0f;
+        densities[idx] = 0.0f;
         masses[idx] = 1.0f;
     }
     interactionForces[0] = Vector4f(0.0f);
@@ -117,15 +116,18 @@ int32_t main(int32_t argc, char **argv) {
     // create buffers
 	Buffer position_buffers[2];
 	Buffer velocity_buffers[2];
-    Buffer acceleration_buffers[2];
+    Buffer density_buffer;
+    Buffer pressure_buffer;
     Buffer mass_buffer; // Constant, so only need one
     Buffer interactionBuffer;
 	position_buffers[0] = device.createBuffer(Buffer::FlagVertex | Buffer::FlagStorage, positions.get(), positions.bytes());
 	position_buffers[1] = device.createBuffer(Buffer::FlagVertex | Buffer::FlagStorage, positions.bytes());
 	velocity_buffers[0] = device.createBuffer(Buffer::FlagStorage, velocities.get(), velocities.bytes());
 	velocity_buffers[1] = device.createBuffer(Buffer::FlagStorage, velocities.bytes());
-    acceleration_buffers[0] = device.createBuffer(Buffer::FlagStorage, accelerations.get(), accelerations.bytes());
-    acceleration_buffers[1] = device.createBuffer(Buffer::FlagStorage, accelerations.bytes());
+
+    density_buffer = device.createBuffer(Buffer::FlagStorage, densities.get(), densities.bytes());
+    pressure_buffer = device.createBuffer(Buffer::FlagStorage, pressures.get(), pressures.bytes());
+
     mass_buffer = device.createBuffer(Buffer::FlagStorage, masses.get(), masses.bytes());
     interactionBuffer = device.createBuffer(Buffer::FlagStorage, interactionForces.get(), interactionForces.bytes());
     if(!position_buffers[0] || !position_buffers[1]) return 1;
@@ -165,12 +167,11 @@ int32_t main(int32_t argc, char **argv) {
 		if(window.getKeyboardKey(' ')) {
 			device.setBuffer(position_buffers[0], positions.get());
 			device.setBuffer(velocity_buffers[0], velocities.get());
-            device.setBuffer(acceleration_buffers[0], accelerations.get());
+            device.setBuffer(pressure_buffer, pressures.get());
+            device.setBuffer(density_buffer, densities.get());
 			frame_counter = 0;
 		}
-		if(window.getKeyboardKey('s')) {
-			frame_counter = 0;
-		}
+		if(window.getKeyboardKey('s')) frame_counter = 0;
 
 		{
 			// create command list
@@ -180,7 +181,6 @@ int32_t main(int32_t argc, char **argv) {
 			if(simulate) {
 				swap(position_buffers[0], position_buffers[1]);
 				swap(velocity_buffers[0], velocity_buffers[1]);
-                swap(acceleration_buffers[0], acceleration_buffers[1]);
 			}
 
 			// compute parameters
@@ -197,8 +197,9 @@ int32_t main(int32_t argc, char **argv) {
 			compute.setUniform(0, compute_parameters);
 			compute.setStorageBuffers(0, {
                 spatial_buffer,
-				position_buffers[0], velocity_buffers[0], acceleration_buffers[0],
-				position_buffers[1], velocity_buffers[1], acceleration_buffers[1],
+				position_buffers[0], velocity_buffers[0],
+				position_buffers[1], velocity_buffers[1],
+                pressure_buffer, density_buffer,
                 mass_buffer, interactionBuffer
 			});
 			compute.dispatch(num_particles);
@@ -208,8 +209,9 @@ int32_t main(int32_t argc, char **argv) {
 			spatial_grid.dispatch(compute, spatial_buffer, 0, num_particles, 20);
 			compute.barrier({
                                     spatial_buffer,
-                                    position_buffers[0], velocity_buffers[0], acceleration_buffers[0],
-                                    position_buffers[1], velocity_buffers[1], acceleration_buffers[1],
+                                    position_buffers[0], velocity_buffers[0],
+                                    position_buffers[1], velocity_buffers[1],
+                                    pressure_buffer, density_buffer,
                                     mass_buffer, interactionBuffer
                             });
 		}
