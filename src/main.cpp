@@ -39,7 +39,7 @@ int32_t main(int32_t argc, char **argv) {
 	const uint32_t grid_size = 64;
 	const uint32_t group_size = 128;
 	constexpr float32_t radius = 0.1f;
-	constexpr float32_t ifps = 1.0f / 400.0f;
+    constexpr float32_t ifps = 1.0f / 400.0f;
 
     constexpr uint32_t size = 32;
 	constexpr uint32_t num_particles = size * size * size;
@@ -58,7 +58,7 @@ int32_t main(int32_t argc, char **argv) {
 	Shader::setCache("main.cache");
 	
 	// create kernel
-	Kernel kernel = device.createKernel().setUniforms(1).setStorages(7, false);
+	Kernel kernel = device.createKernel().setUniforms(1).setStorages(9, false);
 	if(!kernel.loadShaderGLSL("../src/main.comp", "COMPUTE_SHADER=1; GROUP_SIZE=%uu", group_size)) return 1;
 	if(!kernel.create()) return 1;
 	
@@ -78,6 +78,7 @@ int32_t main(int32_t argc, char **argv) {
 	// create particles
 	Array<Vector4f> positions(num_particles);
 	Array<Vector4f> velocities(num_particles);
+    Array<Vector4f> accelerations(num_particles);
     Array<float> masses(num_particles);
     Array<Vector4f> interactionForces(10);
 
@@ -92,6 +93,7 @@ int32_t main(int32_t argc, char **argv) {
                     // set initial particle mass, velocity, pos
 					positions[index] = transform * Vector4f(X, Y, Z, 1.0f);
 					velocities[index] = Vector4f(0.0f);
+                    accelerations[index] = Vector4f(0.0f);
                     masses[index] = 1.0f + index%3;
 				}
 			}
@@ -103,12 +105,15 @@ int32_t main(int32_t argc, char **argv) {
     // create buffers
 	Buffer position_buffers[2];
 	Buffer velocity_buffers[2];
+    Buffer acceleration_buffers[2];
     Buffer mass_buffer; // Constant, so only need one
     Buffer interactionBuffer;
 	position_buffers[0] = device.createBuffer(Buffer::FlagVertex | Buffer::FlagStorage, positions.get(), positions.bytes());
 	position_buffers[1] = device.createBuffer(Buffer::FlagVertex | Buffer::FlagStorage, positions.bytes());
 	velocity_buffers[0] = device.createBuffer(Buffer::FlagStorage, velocities.get(), velocities.bytes());
 	velocity_buffers[1] = device.createBuffer(Buffer::FlagStorage, velocities.bytes());
+    acceleration_buffers[0] = device.createBuffer(Buffer::FlagStorage, accelerations.get(), accelerations.bytes());
+    acceleration_buffers[1] = device.createBuffer(Buffer::FlagStorage, accelerations.bytes());
     mass_buffer = device.createBuffer(Buffer::FlagStorage, masses.get(), masses.bytes());
     interactionBuffer = device.createBuffer(Buffer::FlagStorage, interactionForces.get(), interactionForces.bytes());
     if(!position_buffers[0] || !position_buffers[1]) return 1;
@@ -143,11 +148,12 @@ int32_t main(int32_t argc, char **argv) {
 		
 		// window title
 		if(fps > 0.0f) window.setTitle(String::format("%s %.1f FPS", title.get(), fps));
-		
+
 		// reset simulation
 		if(window.getKeyboardKey(' ')) {
 			device.setBuffer(position_buffers[0], positions.get());
 			device.setBuffer(velocity_buffers[0], velocities.get());
+            device.setBuffer(acceleration_buffers[0], accelerations.get());
 			frame_counter = 0;
 		}
 		if(window.getKeyboardKey('s')) {
@@ -162,6 +168,7 @@ int32_t main(int32_t argc, char **argv) {
 			if(simulate) {
 				swap(position_buffers[0], position_buffers[1]);
 				swap(velocity_buffers[0], velocity_buffers[1]);
+                swap(acceleration_buffers[0], acceleration_buffers[1]);
 			}
 
 			// compute parameters
@@ -178,8 +185,8 @@ int32_t main(int32_t argc, char **argv) {
 			compute.setUniform(0, compute_parameters);
 			compute.setStorageBuffers(0, {
                 spatial_buffer,
-				position_buffers[0], velocity_buffers[0],
-				position_buffers[1], velocity_buffers[1],
+				position_buffers[0], velocity_buffers[0], acceleration_buffers[0],
+				position_buffers[1], velocity_buffers[1], acceleration_buffers[1],
                 mass_buffer, interactionBuffer
 			});
 			compute.dispatch(num_particles);
@@ -187,7 +194,12 @@ int32_t main(int32_t argc, char **argv) {
 
 			// dispatch spatial grid
 			spatial_grid.dispatch(compute, spatial_buffer, 0, num_particles, 20);
-			compute.barrier(position_buffers[0]);
+			compute.barrier({
+                                    spatial_buffer,
+                                    position_buffers[0], velocity_buffers[0], acceleration_buffers[0],
+                                    position_buffers[1], velocity_buffers[1], acceleration_buffers[1],
+                                    mass_buffer, interactionBuffer
+                            });
 		}
 		
 		// window target

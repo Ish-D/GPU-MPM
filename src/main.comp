@@ -12,12 +12,17 @@ layout(std140, binding = 0) uniform ComputeParameters {
 };
 
 layout(std430, binding = 1) buffer GridBuffer { uint grid_buffer[]; };
+
 layout(std430, binding = 2) writeonly buffer DestPositionBuffer { vec4 dest_position_buffer[]; };
 layout(std430, binding = 3) writeonly buffer DestVelocityBuffer { vec4 dest_velocity_buffer[]; };
-layout(std430, binding = 4) readonly buffer SrcPositionBuffer { vec4 src_position_buffer[]; };
-layout(std430, binding = 5) readonly buffer SrcVelocityBuffer { vec4 src_velocity_buffer[]; };
-layout(std430, binding = 6) readonly buffer massBuffer {float mass_buffer[];};
-layout(std430, binding = 7) readonly buffer interactionBuffer {vec4 interaction_buffer[];};
+//layout(std430, binding = 4) writeonly buffer DestAccelBuffer { vec4 dest_accel_buffer[]; };
+
+layout(std430, binding = 5) readonly buffer SrcPositionBuffer { vec4 src_position_buffer[]; };
+layout(std430, binding = 6) readonly buffer SrcVelocityBuffer { vec4 src_velocity_buffer[]; };
+//layout(std430, binding = 7) readonly buffer SrcAccelBuffer { vec4 src_accel_buffer[]; };
+
+layout(std430, binding = 8) readonly buffer massBuffer {float mass_buffer[];};
+layout(std430, binding = 9) readonly buffer interactionBuffer {vec4 interaction_buffer[];};
 
 /*
  */
@@ -53,21 +58,43 @@ vec3 sphere_collision(vec3 position_0, vec3 velocity_0, vec3 position_1, vec3 ve
 	return vec3(0.0f);
 }
 
+// Kernel function for density calculation (Poly6)
+float poly6Kernel(float r, float h) {
+	if (r > h) return 0.0;
+	float h2 = h * h;
+	float r2 = r * r;
+	float factor = (h2 - r2) * (h2 - r2) * (h2 - r2);
+	return (315.0 / (64.0 * 3.141592 * pow(h, 9))) * factor;
+}
+
+// Gradient of the kernel function for pressure calculation (Spiky)
+vec3 gradSpikyKernel(vec3 r, float h) {
+	float rLength = length(r);
+	if (rLength > h || rLength == 0.0) return vec3(0.0);
+	float factor = pow(h - rLength, 2.0);
+	return (-45.0 / (3.141592 * pow(h, 6))) * factor * (r / rLength);
+}
+
+const float SMOOTHING_LEN = 0.1f;
+const float VISCOSITY = 1.0f;
 
 void main() {
-
 	uint global_id = gl_GlobalInvocationID.x;
 	if(global_id >= size) return;
 
 	vec3 position = src_position_buffer[global_id].xyz;
 	vec3 velocity = src_velocity_buffer[global_id].xyz;
+	vec3 acceleration = vec3(0.0f);
 
+	vec3 totalForce = vec3(0.0f);
 	vec3 impulse = plane_collision(vec4(0.0f, 0.0f, 1.0f, 0.0f), position, velocity, radius);
-	for (int i = 0; i<10; i++) {
-		[[branch]] if (interaction_buffer[i].w == 1.0f) {
-			impulse += sphere_collision(position, velocity, interaction_buffer[i].xyz, vec3(0,0,0), 0.6f);
-		}
- 	}
+	vec3 pressureForce = vec3(0.0);
+	vec3 viscosityForce = vec3(0.0);
+	float density = 0.0f;
+
+	[[branch]] if (interaction_buffer[0].w == 1.0f) {
+		impulse += sphere_collision(position, velocity, interaction_buffer[0].xyz, vec3(0,0,0), 0.6f);
+	}
 
 	uvec3 index = get_index(position, grid_scale, 0.0f);
 	for(uint z = 0u; z < 2u; z++) {
@@ -82,9 +109,25 @@ void main() {
 				for(uint i = range_begin; i < range_end; i++) {
 					uint index = grid_buffer[i];
 					if(global_id != index) {
+						// Calculate impulse
 						vec3 position_1 = src_position_buffer[index].xyz;
 						vec3 velocity_1 = src_velocity_buffer[index].xyz;
 						impulse += sphere_collision(position, velocity, position_1, velocity_1, radius);
+
+						// Calculate pressure
+						vec3 delta = position - position_1;
+						float r = length(delta);
+						// Calculating local density approximation
+						density += poly6Kernel(r, radius) * mass_buffer[index];
+						float pressure = density - 1000.0f;
+						// Applying pressure force calculation using Spiky kernel gradient
+						pressureForce += -gradSpikyKernel(delta, radius) * pressure;
+
+						// calculate viscosity
+						[[branch]] if (r < SMOOTHING_LEN) {
+							float weight = (radius - r) / radius;
+							viscosityForce +=  weight * (velocity_1 - velocity);
+						}
 					}
 				}
 			}
@@ -94,17 +137,44 @@ void main() {
 	float len = length(impulse);
 	if(len > 32.0f) impulse *= 32.0f / len;
 
-	// Limit position to a cube
-	[[branch]] if (position.x > 5.0f) velocity.x = -0.1f;
-	[[branch]] if (position.x < -5.0f) velocity.x = 0.1f;
-	[[branch]] if (position.y > 5.0f) velocity.y = -0.1f;
-	[[branch]] if (position.y < -5.0f) velocity.y = 0.1f;
+	viscosityForce *= VISCOSITY;
+	totalForce = pressureForce  + impulse + (vec3(0.0f, 0.0f, -9.81f) * density);
 
+	len = length(totalForce);
+	if(len > 32.0f) totalForce *= 32.0f / len;
+
+	// Integrate
+	// Limit position/velocity to a cube
+	[[branch]] if (position.x > 5.0f) {
+		position.x = 5.0f;
+		velocity.x = -0.01f;
+	}
+	[[branch]] if (position.x < -5.0f) {
+		position.x = -5.0f;
+		velocity.x = 0.01f;
+	}
+
+	[[branch]] if (position.y > 5.0f) {
+		position.y = 5.0f;
+		velocity.y = -0.01f;
+	}
+	[[branch]] if (position.y < -5.0f) {
+		position.y = -5.0f;
+		velocity.y = 0.01f;
+	} 	[[branch]] if (position.z < 0.0f) {
+		position.z = 0.0f;
+		velocity.z = 0.1f;
+	}
+
+	// new Calculations
+//	acceleration = totalForce/density;
+//	velocity += ifps * acceleration;
+//	position += ifps * velocity;
+
+	// old calculations
 	position += velocity * ifps;
 	velocity.z -= 2.0f * ifps * mass_buffer[global_id];
 	velocity += impulse;
-
-
 
 	dest_position_buffer[global_id] = vec4(position, 0.0f);
 	dest_velocity_buffer[global_id] = vec4(velocity, 0.0f);

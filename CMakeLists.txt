@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.27)
 project(GPU_MPM CXX)
 
+find_package(PDAL 2.0.0 REQUIRED CONFIG)
+
 if(NOT WIN32)
 	find_program(HAS_CCACHE "ccache")
 	if(HAS_CCACHE)
@@ -24,6 +26,10 @@ endif()
 add_executable(${PROJECT_NAME} src/main.cpp)
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_20)
-target_include_directories(${PROJECT_NAME} PRIVATE include/tellusim include/lib src)
-target_link_libraries(${PROJECT_NAME} Tellusim_${ARCH}d)
+target_include_directories(${PROJECT_NAME} PRIVATE
+		include/tellusim include/lib src
+		${PDAL_INCLUDE_DIRS}
+		${PDAL_INCLUDE_DIRS}/pdal)
+
+target_link_libraries(${PROJECT_NAME} Tellusim_${ARCH}d  ${PDAL_LIBRARIES})
 set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "main")
