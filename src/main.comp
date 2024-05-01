@@ -17,6 +17,7 @@ layout(std430, binding = 3) writeonly buffer DestVelocityBuffer { vec4 dest_velo
 layout(std430, binding = 4) readonly buffer SrcPositionBuffer { vec4 src_position_buffer[]; };
 layout(std430, binding = 5) readonly buffer SrcVelocityBuffer { vec4 src_velocity_buffer[]; };
 layout(std430, binding = 6) readonly buffer massBuffer {float mass_buffer[];};
+layout(std430, binding = 7) readonly buffer interactionBuffer {vec4 interaction_buffer[];};
 
 /*
  */
@@ -62,6 +63,11 @@ void main() {
 	vec3 velocity = src_velocity_buffer[global_id].xyz;
 
 	vec3 impulse = plane_collision(vec4(0.0f, 0.0f, 1.0f, 0.0f), position, velocity, radius);
+	for (int i = 0; i<10; i++) {
+		[[branch]] if (interaction_buffer[i].w == 1.0f) {
+			impulse += sphere_collision(position, velocity, interaction_buffer[i].xyz, vec3(0,0,0), 0.6f);
+		}
+ 	}
 
 	uvec3 index = get_index(position, grid_scale, 0.0f);
 	for(uint z = 0u; z < 2u; z++) {

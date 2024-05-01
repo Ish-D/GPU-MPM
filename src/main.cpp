@@ -8,7 +8,7 @@
 #include <parallel/TellusimPrefixScan.h>
 #include <parallel/TellusimRadixSort.h>
 #include <parallel/TellusimSpatialGrid.h>
-
+#include <iostream>
 using namespace Tellusim;
 
 int32_t main(int32_t argc, char **argv) {
@@ -58,7 +58,7 @@ int32_t main(int32_t argc, char **argv) {
 	Shader::setCache("main.cache");
 	
 	// create kernel
-	Kernel kernel = device.createKernel().setUniforms(1).setStorages(6, false);
+	Kernel kernel = device.createKernel().setUniforms(1).setStorages(7, false);
 	if(!kernel.loadShaderGLSL("../src/main.comp", "COMPUTE_SHADER=1; GROUP_SIZE=%uu", group_size)) return 1;
 	if(!kernel.create()) return 1;
 	
@@ -79,6 +79,7 @@ int32_t main(int32_t argc, char **argv) {
 	Array<Vector4f> positions(num_particles);
 	Array<Vector4f> velocities(num_particles);
     Array<float> masses(num_particles);
+    Array<Vector4f> interactionForces(10);
 
 	Matrix4x4f transform = Matrix4x4f::translate(0.0f, 0.0f, size * radius * 2.0f) * Matrix4x4f::rotateY(35.3f) * Matrix4x4f::rotateX(45.0f);
 	for(uint32_t z = 0, index = 0; z < size; z++) {
@@ -96,16 +97,20 @@ int32_t main(int32_t argc, char **argv) {
 			}
 		}
 	}
-	
-	// create buffers
+
+    for (int i = 0; i<10; i++) interactionForces[i] = Vector4f(0.0f);
+
+    // create buffers
 	Buffer position_buffers[2];
 	Buffer velocity_buffers[2];
     Buffer mass_buffer; // Constant, so only need one
+    Buffer interactionBuffer;
 	position_buffers[0] = device.createBuffer(Buffer::FlagVertex | Buffer::FlagStorage, positions.get(), positions.bytes());
 	position_buffers[1] = device.createBuffer(Buffer::FlagVertex | Buffer::FlagStorage, positions.bytes());
 	velocity_buffers[0] = device.createBuffer(Buffer::FlagStorage, velocities.get(), velocities.bytes());
 	velocity_buffers[1] = device.createBuffer(Buffer::FlagStorage, velocities.bytes());
     mass_buffer = device.createBuffer(Buffer::FlagStorage, masses.get(), masses.bytes());
+    interactionBuffer = device.createBuffer(Buffer::FlagStorage, interactionForces.get(), interactionForces.bytes());
     if(!position_buffers[0] || !position_buffers[1]) return 1;
 	if(!velocity_buffers[0] || !velocity_buffers[1]) return 1;
 	if (!mass_buffer) return 1;
@@ -175,7 +180,7 @@ int32_t main(int32_t argc, char **argv) {
                 spatial_buffer,
 				position_buffers[0], velocity_buffers[0],
 				position_buffers[1], velocity_buffers[1],
-                mass_buffer,
+                mass_buffer, interactionBuffer
 			});
 			compute.dispatch(num_particles);
 			compute.barrier(spatial_buffer);
@@ -219,6 +224,16 @@ int32_t main(int32_t argc, char **argv) {
             if(window.getKeyboardKey('6')) {
                 baseView = baseView * Matrix4x4f::rotateZ(sens);
             }
+
+            std::printf("%f %f\n", window.getMouseX()/100.0f - 5.0f, window.getMouseY()/100.0f - 5.0f);
+            float mouseX = window.getMouseX()/100.0f - 5.0f;
+            float mouseY = window.getMouseY()/100.0f - 5.0f;
+
+            if (mouseX > 0.0f && mouseX < 5.0f && mouseY > -3.0f && mouseY < 3.0f)
+                interactionForces[0] = Vector4f(mouseX, mouseY, 0.0f, 1.0f);
+            else
+                interactionForces[0] = Vector4f(0.0f, 0.0f, 0.0f, 0.0f);
+            device.setBuffer(interactionBuffer, interactionForces.get());
 
 			// draw particles
 			command.setPipeline(pipeline);
