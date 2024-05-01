@@ -13,6 +13,7 @@ layout(location = 1) out int id;
 
 void main() {
     vec4 position = vec4(in_position.xyz, 1.0f);
+    position.z = max(position.z, 0.0f);
     id = gl_InstanceID;
     gl_Position = projection * (modelview * position);
 

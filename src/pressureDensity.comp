@@ -11,12 +11,14 @@ layout(std140, binding = 0) uniform ComputeParameters {
     uint ranges_offset;
 };
 
-layout(std430, binding = 1) buffer GridBuffer { uint grid_buffer[]; };
-layout(std430, binding = 5) readonly buffer SrcPositionBuffer { vec4 src_position_buffer[]; };
-layout(std430, binding = 6) readonly buffer SrcVelocityBuffer { vec4 src_velocity_buffer[]; };
-layout(std430, binding = 8) readonly buffer massBuffer {float mass_buffer[];};
-/*
- */
+layout(std430, binding = 1) readonly buffer GridBuffer { uint grid_buffer[]; };
+layout(std430, binding = 2) readonly buffer SrcPositionBuffer { vec4 src_position_buffer[]; };
+layout(std430, binding = 3) readonly buffer SrcVelocityBuffer { vec4 src_velocity_buffer[]; };
+layout(std430, binding = 4) writeonly buffer pressureBuffer { float pressure_buffer[]; };
+layout(std430, binding = 5) writeonly buffer densityBuffer { float density_buffer[]; };
+layout(std430, binding = 6) readonly buffer massBuffer {float mass_buffer[];};
+
+
 uvec3 get_index(vec3 position, float grid_scale, float offset) {
     return uvec3(floor(position * grid_scale + 1024.0f + offset));
 }
@@ -25,34 +27,17 @@ uint get_hash(uvec3 index, uint grid_size) {
     return grid_size * (grid_size * index.z + index.y) + index.x;
 }
 
-// Kernel function for density calculation (Poly6)
-float poly6Kernel(float r, float h) {
-    if (r > h) return 0.0;
-    float h2 = h * h;
-    float r2 = r * r;
-    float factor = (h2 - r2) * (h2 - r2) * (h2 - r2);
-    return (315.0 / (64.0 * 3.141592 * pow(h, 9))) * factor;
-}
-
-// Gradient of the kernel function for pressure calculation (Spiky)
-vec3 gradSpikyKernel(vec3 r, float h) {
-    float rLength = length(r);
-    if (rLength > h || rLength == 0.0) return vec3(0.0);
-    float factor = pow(h - rLength, 2.0);
-    return (-45.0 / (3.141592 * pow(h, 6))) * factor * (r / rLength);
-}
-
-const float SMOOTHING_LEN = 0.1f;
-const float VISCOSITY = 1.0f;
-const float STIFFNESS = 2000.0f;
+#define STIFFNESS 10.f
+#define RESTING_DENSITY 1.f
+#define SMOOTHING_LEN 1
+#define PI  3.1415927410125732421875f
 
 void main() {
     uint global_id = gl_GlobalInvocationID.x;
     if(global_id >= size) return;
 
     vec3 position = src_position_buffer[global_id].xyz;
-    vec3 velocity = src_velocity_buffer[global_id].xyz;
-    vec3 acceleration = vec3(0.0f);
+    float density = 0.0f;
 
     uvec3 index = get_index(position, grid_scale, 0.0f);
     for(uint z = 0u; z < 2u; z++) {
@@ -66,11 +51,20 @@ void main() {
                 uint range_end = grid_buffer[range_index + 1u];
                 for(uint i = range_begin; i < range_end; i++) {
                     uint index = grid_buffer[i];
-                    if(global_id != index) {
-                            // calculate density and pressure
-                        }
+                    // calculate density and pressure
+                    vec3 position_1 = src_position_buffer[index].xyz;
+                    vec3 delta = position - position_1;
+                    float r = length(delta);
+                    float r2 = dot(delta, delta);
+
+                    [[branch]] if (r < SMOOTHING_LEN) {
+                        density += mass_buffer[index] * (315.0f/(64.0f * PI * pow(SMOOTHING_LEN, 9))) * pow(SMOOTHING_LEN*SMOOTHING_LEN - r2,3);
                     }
+                }
             }
         }
     }
+
+    density_buffer[global_id] = max(density, RESTING_DENSITY);
+    pressure_buffer[global_id] = STIFFNESS * (density - RESTING_DENSITY);
 }
