@@ -75,7 +75,7 @@
 <body>
 
     <h1 align="middle">CS 184: Computer Graphics and Imaging, Spring 2024</h1>
-    <h1 align="middle">Final Project: GPU MPM</h1>
+    <h1 align="middle">Final Project: Real-Time GPU Smoothed-Particle Hydrodynamics 3D Fluid Simulation</h1>
     <h2 align="middle">Team 62: Ishan Darji, Dylan Rosario, Harkeerat Singh, Zachary Yan</h2>
 
     <br /><br />
@@ -126,16 +126,22 @@
     </a>
 
     <div align="middle">
-        <img src="img/initial.png" align="middle" width="500vw" />
-        <figcaption>Particles in Initial State</figcaption>
+        <img src="img/wordsMotion.gif" align="middle" width="500vw" />
+        <figcaption>CS 184 Fluid Motion</figcaption>
 
-        <img src="img/in-air.png" align="middle" width="500vw" />
-        <figcaption>Particles Mid-Air</figcaption>
+        <video src="img/FinalWalkthrough.mp4" align="middle" width="500vw" controls />
+        <figcaption>Overall Walkthrough</figcaption>
 
-        <img src="img/on-ground.png" align="middle" width="500vw" />
-        <figcaption>Particles Settled on Ground</figcaption>
+
 
     </div>
+
+    <h2 align="middle">References</h2>
+    <ul>
+        <li>[1] <a href="https://doc.magnum.graphics/magnum/fluidsimulation3d_2SPH_2SPHSolver_8cpp-example.html">Magnum: 3D Fluid Simulation</a></li>
+        <li>[2] <a href="https://tellusim.com/evaluation/">Tellusim Evaluation</a></li>
+        <li>[3] <a href="https://www.danielgm.net/cc/">CloudCompare</a></li>
+    </ul>
 
     <h2 align="middle">Team Contributions</h2>
     <ul>
@@ -157,7 +163,14 @@
                 Optimized fluid dynamics algorithms for improved stability and performance.
             </li>
         </ul>
-        <li><strong>Zachary Yan</strong></li>
+        <li>
+            <strong>Zachary Yan</strong>
+            <ul>
+                <li>
+                    Implemented the input parsing, sampling the original model for a point cloud to particles for simulation.
+                </li>
+            </ul>
+        </li>
         <li>
             <strong>Harkeerat Singh</strong>
             <ul>
