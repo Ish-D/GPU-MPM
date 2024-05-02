@@ -45,14 +45,14 @@ int32_t main(int32_t argc, char **argv) {
 	// spatial parameters
 	const uint32_t grid_size = 32;
 	const uint32_t group_size = 128;
-	constexpr float32_t radius = 0.08f;
+	constexpr float32_t radius = 0.06f;
     float32_t ifps = 1.0f / 50.0f;
 
     //read .las file
     pdal::Options options;
     pdal::LasReader reader;
     //pick a file to read
-    options.add("filename", "../src/models/cs184_60k.las");
+    options.add("filename", "../src/models/dragon_100k.las");
     reader.setOptions(options);
     pdal::PointTable table;
     reader.prepare(table);
@@ -104,7 +104,7 @@ int32_t main(int32_t argc, char **argv) {
     Array<float> masses(num_particles);
     Array<Vector4f> interactionForces(1);
 
-	Matrix4x4f transform = Matrix4x4f::translate(0.0f, -3.0f, 3.2f)  * Matrix4x4f::scale(1.8f) * Matrix4x4f::rotateZ(90.0f)  *Matrix4x4f::rotateX(80.0f) ;
+	Matrix4x4f transform = Matrix4x4f::translate(0.0f, 0.0f, 3.2f)  * Matrix4x4f::scale(0.03f) * Matrix4x4f::rotateZ(90.0f)  *Matrix4x4f::rotateX(80.0f) ;
 
     for (pdal::PointId idx = 0; idx < num_particles; ++idx) {
         positions[idx] = transform * Vector4f(view->getFieldAs<double>(pdal::Dimension::Id::X, idx),

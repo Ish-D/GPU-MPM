@@ -59,10 +59,10 @@ vec3 sphere_collision(vec3 position_0, vec3 velocity_0, vec3 position_1, vec3 ve
 	return vec3(0.0f);
 }
 
-#define BOX_SIZE 3.0f
-#define VISCOSITY 0.02f
 #define PI  3.1415927410125732421875f
-#define SMOOTHING_LEN 1
+#define BOX_SIZE 5.0f
+#define VISCOSITY 0.018f
+#define SMOOTHING_LEN 0.4f
 
 void main() {
 	uint global_id = gl_GlobalInvocationID.x;
@@ -107,7 +107,7 @@ void main() {
 							float r3 = r2*r;
 							float massRatio = mass_buffer[index]/mass_buffer[global_id];
 							float W_visc = -(r3 / (2 * pow(SMOOTHING_LEN,3))) + (r2 / pow(SMOOTHING_LEN, 2)) + (SMOOTHING_LEN / (2 * r)) - 1;
-							float W_pressure = -45.0f/(PI * pow(SMOOTHING_LEN, 6)) * pow(SMOOTHING_LEN-r, 2);
+							float W_pressure =  pow(SMOOTHING_LEN-r, 2);
 
 							// Calculate pressure
 							pressureForce += massRatio *
@@ -125,9 +125,10 @@ void main() {
 
 	viscosityForce *= VISCOSITY;
 
+
+	impulse +=  (-pressureForce + viscosityForce + vec3(0.0f, 0.0f, -2.5f))  * ifps * mass_buffer[global_id];
 	float len = length(impulse);
 	if(len > 32.0f) impulse *= 32.0f / len;
-	impulse +=  ((-pressureForce + viscosityForce) + vec3(0.0f, 0.0f, -2.5f))  * ifps * mass_buffer[global_id];
 
 	// Integrate
 	velocity += impulse;

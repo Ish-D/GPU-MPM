@@ -80,11 +80,14 @@
 
     <br /><br />
 
+    <div align="middle">
+        <img src="img/wordsMotion.gif" align="middle" width="500vw" />
+    </div>
 
     <div>
         <h2 align="middle">Abstract</h2>
         <p>
-            For this project, we aimed to create a real-time Smoothed-Particle Hydrodynamics (SPH) program to accurately model a 3D fluid. With this simulation, we can render images depicting an originally solid object in freefall that immediately acts as a fluid. In addition, a key core software development kit (SDK) assists with generating the environment for the simulation. All of these tools facilitate the implementation of our SPH to successfully simulate the behavior of the fluid under interactive input from a user.
+            For this project, we aimed to create an interactive real-time fluid simulation programing using Smoothed-Particle Hydrodynamics (SPH) to model the dynamics of fluids in 3D. With this simulation, we can depict models of our choice acts as a fluid. To accomplish this, we used the Tellusim core software development kit (SDK) to assists with generating a cross-platform environment for the simulation. All of these tools facilitate the implementation of our SPH to successfully simulate the behavior of the fluid under interactive input from a user.
         </p>
 
     </div>
@@ -95,29 +98,25 @@
             From a technical perspective, our implementation was based upon a similar SPH example [1] to provide a base framework of how to most effectively model fluid flow with particles. The bulk of the techniques used in this project center around calculating the position, velocity, and acceleration for any given particle at each time step. From previous assignments, we know that force is equal to mass multiplied by acceleration. Our main goal is to sum all of the forces that act upon every particle and form kinematics equations. With these equations, we can compute the new positions and velocities for each particle in the simulation. This involves integrating the interactions such as pressure and viscosity forces between particles, as well as handling collisions and boundary constraints effectively. By leveraging the compute capabilities of modern GPUs, we were able to perform these calculations in parallel, significantly speeding up the simulation while maintaining high fidelity in the fluid's dynamic behavior.
         </p>
         <p>
-            Our GPU from Telluism [2] is essential for rendering the scene. This lays out a structure for defining everything needed to render the interactive scene including initialization of vectors to store the position, velocity, and acceleration of each particle. Easy accessibility and efficient storage of this data is key for speeding up run time and ultimately forming an approachable program. Also, it
-            facilitates real-time updates and interactions, allowing users to dynamically alter parameters and immediately see the effects on the fluid simulation. The use of this advanced hardware and optimized data structures ensures that our application can handle thousands of particles simultaneously with minimal latency, providing a seamless and engaging experience for users interested in exploring fluid dynamics visually.
+            Telluism [2] provided a convenient abstraction over traditional graphics APIs, and made it possible for us to write all of our code in C++ and GLSL compute shaders but run across all the platforms our team members used. Having this abstraction meant that we could iterate faster than if we were to use plain OpenGL, and also has some performance benefits because the code is generated to whatever is best for the hardware being used. For example, on a Mac Tellusim will take the code and translate it to Metal, but on a computer with an NVIDIA GPU it may opt to translate the compute shaders to CUDA. This lays out a structure for defining everything needed to render the interactive scene including initialization of vectors to store the position, velocity, and acceleration of each particle. Easy accessibility and efficient storage of this data is key for speeding up run time and ultimately forming an approachable program.
         </p>
         <p>
-            A major component of our project includes the ability to control the motion of the fluid as the user, specifically mouse movements detected on the fluid will introduce new forces into the scene. These extra forces are given a magnitude we deemed representative of the motion and can then simply be added to the existing force vectors we created. This will cause real-time movement of the fluid since new external forces are being added.
-        </p>
-
-        <p>
-            To further vary our approach from previous references, we imported a unique object in an effort to simulate an interesting flow of particles that differs from a waterfall for example. This object begins as a 3D mesh which proved to cause problems when trying to import into our program, since there are no easily defined coordinates of particles. Our solution included converting this to a point cloud so that the Telluism core SDK can process the desired object and perform the SPH simulation. With the help of an open source project [3], we are able to convert an object to a list of positions defining each particle of the object. From this, we can now parse through these positions and perform the necessary calculations.
-
-
+            A major component of our project includes the ability to control the motion of the fluid as the user, and the realtime component as a whole. We made many optimizations on both the rendering and compute side of the simulation. For one, we do not actually store any mesh data, all of our particles are defined by a position and radius. This makes handling sphere-sphere and sphere-plane collisions extremely simple, and then the particles can simply be shaded using the normal and colored by their velocity for visualization purposes. Another big optimization was in the particle collision detection: it would be extremely expensive to iterate over every single particle to check for collisions, so we use a hashed spatial grid that is sorted on the GPU which allows us to quickly look up the spatial neighbors of a particular particle. This saves us lots of computational time and allows us to achieve the particle counts of over 200,000 that we have in the final version.  We make the scene interactive by placing an invisible sphere in the scene based off the mouse position, and calculating the collision of particles with it. This will cause real-time movement of the fluid since new external forces are being added.
         </p>
 
         <p>
-            Throughout the implementation process, we encountered a number of challenges, some of which including data synchronization and performance optimization. GPU programming by nature requires managing data across multiple threads to ensure memory visibility is maintained. We used Vulkan synchronization primitives to control data flow between different stages of the computation.
+            To further vary our approach from previous references, we added the ability to imported 3D models in an effort to simulate an interesting flow of particles. This object begins as a 3D mesh which proved to cause problems when trying to import into our program, since there are no easily defined coordinates of particles. Our solution included converting this to a point cloud so that we can convert the 3D model into particles, and and perform the SPH simulation. With the help of an open source project called CloudCompare [3], we are able to convert an object to a list of positions defining each particle of the object. CloudCompare also allowed for variable point density, which meant we could test models with different numbers of particles. From there, we could parse through these positions and perform the necessary calculations.
+        </p>
 
+        <p>
+            Throughout the implementation process, we encountered a number of challenges, some of which including data synchronization and performance optimization. GPU programming by nature requires managing data across multiple threads to ensure memory visibility is maintained. We used Tellusim memory barriers to control data flow between different stages of the computation, to serialize the execution of our compute shaders.
         </p>
 
         <p>
             Another obstacle occurred when implementing the interactive abilities of the program. From the user perspective, we wanted to provide as much interactivity as possible by allowing the viewing perspective of the object to change in real-time. Intuitively, the most natural way to do this would be for dragging the mouse to cause rotation and translation around the scene. Ultimately, we settled upon a system of keybinds to control rotation across each of the 3 axes of rotation: x, y, and z. With this in place, the program user can explore the scene and investigate how each individual particle moves.
         </p>
 
-        After completing this project, a great multitude of lessons have been learned. First off, we became aware of how time consuming and complex some other similar methods are. We initially attempted to create a real-time material point method to generate a similar movement. While we gained experience throughout this course by working with similar projects like Cloth Sim, there are a number of methods specifically with grid operations that require too great of an amount of debugging. Ultimately, this taught us how to pivot and choose a different direction for our project. We were still able to use the same GPU base, but instead we went the route with SPH. This process brought us a greater understanding of how to utilize powerful SDKs to accomplish our desired goal.
+        After completing this project, a great multitude of lessons have been learned. First off, we became aware of how time-consuming and complex other similar methods are. We initially attempted to create a real-time material point method to generate a similar movement, however we ran into constraints with time and GPU-synchronization errors with regard to the grid and particles. While we gained experience throughout this course by working with similar projects like Cloth Sim, there are a number of methods specifically with grid operations that require too great of an amount of debugging. Ultimately, this taught us how to pivot and choose a different direction for our project. We were still able to use the same GPU base, but instead we went the route with SPH. This process brought us a greater understanding of how different methods can be used to accomplish similar goals.
 
         </p>
     </div>
@@ -126,8 +125,8 @@
     </a>
 
     <div align="middle">
-        <img src="img/wordsMotion.gif" align="middle" width="500vw" />
-        <figcaption>CS 184 Fluid Motion</figcaption>
+        <img src="img/viscous.gif" align="middle" width="500vw" />
+        <figcaption>Viscous Fluid Example with Dragon Model</figcaption>
 
         <video src="img/FinalWalkthrough.mp4" align="middle" width="500vw" controls />
         <figcaption>Overall Walkthrough</figcaption>

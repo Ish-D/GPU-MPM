@@ -29,7 +29,7 @@ uint get_hash(uvec3 index, uint grid_size) {
 
 #define STIFFNESS 10.f
 #define RESTING_DENSITY 1.f
-#define SMOOTHING_LEN 1
+#define SMOOTHING_LEN 1.f
 #define PI  3.1415927410125732421875f
 
 void main() {
